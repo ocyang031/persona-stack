@@ -1,461 +1,725 @@
 #!/usr/bin/env python3
-"""persona-stack · 编译落位（dsh P1 prefix 注入 + openclaw SOUL/AGENTS 生成）。
+"""persona — registry + reconciler for the five-file persona set.
 
-设计依据：人设配置工具-需求规格.md（四层模型，2026-11-18）。
-dsh 口径：只改 standard preset；契约合并进 prefix；不碰其余 preset 与 AGENTS.md。
-openclaw 口径（2026-11-18 采纳）：主流 SOUL.md + AGENTS.md 组合作为落位格式——
-  compile 生成 openclaw/SOUL.md（身份+风格）与 openclaw/AGENTS.md（契约+域规格），
-  install 按「托管区块三态」写入目标 workspace（无标记追加 / 有标记换块 / uninstall 删块），
-  区块外内容一律不动——双文件边界由编译期强制切分。
+Implements DESIGN.md v1: the five files ARE the final form. This tool never
+compiles or reshapes them. It snapshots them into an immutable, content-hashed
+bundle directory (the registry), records desired state in bindings.json, and
+converges host-side copies to it (the reconciler), reporting drift.
 
-命令：
-  persona.py compile [--host dsh|openclaw]
-  persona.py install --host dsh            # compile + 挂 --patch + 重启 + verify（失败回滚）
-  persona.py install --host openclaw [--target DIR]   # compile + 托管区块落位 + verify（失败还原）
-  persona.py verify [--host dsh|openclaw]
-  persona.py uninstall [--host dsh|openclaw] [--target DIR]
-
-关键机制（源码实读 @deepseek-ai/dsh-app-boot/lib/index.js:61-115）：
-  - patch 按 id 命中顶层 entry，overrides 浅覆盖（整体替换 config）。
-  - preset 的 config.plugins 未标 group:true，故子项 id:persona 不在索引里，
-    不能直接 patch；必须整体覆盖 standard 的 config（保留全部插件，只改 prefix）。
-  - 因此编译产物 = 从「当前 dump」动态提取的完整 standard config + 改后的 prefix，
-    这样 dsh 升级/插件变化时重新 compile 即可跟上，不硬编码插件列表。
+Host adapters (seam ①): file/openclaw (managed-block envelope), dsh (single
+prefix with self-describing file markers). Registry backend (seam ②): a git
+repo — this one. Triggers (seam ③): manual CLI or the dsh start.sh hook.
 """
+from __future__ import annotations
+
 import argparse
-import datetime as dt
 import hashlib
-import os
+import json
 import re
-import shutil
 import subprocess
 import sys
-import time
+from datetime import datetime, timezone
+from pathlib import Path
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SOURCE_DIRNAME = "persona-261118-v1.0"          # 首版源目录；未来由 persona.yaml 发现
-DSH_PATCH_DIR = os.path.join(HERE, "dsh")
-PATCH_FILE = os.path.join(DSH_PATCH_DIR, "persona.patch.yml")
-START_SH = "/workspace/dsh-app/start.sh"
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
-# openclaw 宿主（SOUL.md + AGENTS.md 主流组合，作为 persona-stack 的落位格式之一）
-OC_PERSONA_ID = "persona-261118-v1.0"
-OC_DIR = os.path.join(HERE, "openclaw")
-OC_IDENTITY_ART = os.path.join(OC_DIR, "IDENTITY.md")
-OC_SOUL_ART = os.path.join(OC_DIR, "SOUL.md")
-OC_AGENTS_ART = os.path.join(OC_DIR, "AGENTS.md")
-OC_ARTIFACTS = ("IDENTITY.md", "SOUL.md", "AGENTS.md")   # 统一维护：install / uninstall 都以此为准
-OC_DEFAULT_TARGET = "/root/.openclaw/workspace"   # OpenClaw 默认 workspace；可 --target 覆盖
-OC_BLOCK_RE = re.compile(
-    rf"<!-- persona:{OC_PERSONA_ID}@[\w.]+ BEGIN -->.*?<!-- persona:{OC_PERSONA_ID}@[\w.]+ END -->\n?",
-    re.S,
-)
-NODE24 = "/root/.nvm/versions/node/v24.21.0/bin/node"
-DSH_ENTRY = "/workspace/dsh-app/node_modules/@deepseek-ai/dsh/lib/bin.js"
-PROFILE = "web"
-DUMP_FILE = "/tmp/persona-dsh-dump.yml"
-
-# 托管区块标记（start.sh 里 --patch 参数），可识别、可替换、可删除
-MARK_BEGIN = "# >>> persona-stack managed (dsh prefix) >>>"
-MARK_END = "# <<< persona-stack managed (dsh prefix) <<<"
-FINGERPRINT = "<!-- persona:persona-261118-v1.0@{} -->"   # {} = version from persona.yaml
+REPO = Path(__file__).resolve().parent
+BUNDLES_DIR = REPO / "bundles"
+BINDINGS_FILE = REPO / "bindings.json"
+RECEIPTS_DIR = REPO / "receipts"
+HASH_LEN = 16
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+ANCHOR_RE = re.compile(r"\(([A-Z]+_[A-Z0-9_]+)\)")
+PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
 
 
-def die(msg, code=1):
-    print(f"[persona] ERROR: {msg}", file=sys.stderr)
-    sys.exit(code)
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def log(msg):
-    print(f"[persona] {msg}")
+def die(msg: str) -> "None":
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(1)
 
 
-# ---------- 源目录读取 ----------
-def find_source_dir():
-    """找源目录：优先 persona.yaml 的 id，否则固定目录名。"""
-    d = os.path.join(HERE, SOURCE_DIRNAME)
-    if not os.path.isdir(d):
-        die(f"源目录不存在: {d}")
-    return d
+# ---------------------------------------------------------------- manifest
+
+def _kv(s: str) -> "tuple[str, str]":
+    k, _, v = s.partition(":")
+    v = v.strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        v = v[1:-1]
+    return k.strip(), v
 
 
-def read_yaml_scalars(path):
-    """只读顶层简单标量（key: value），不引依赖、不解析嵌套。"""
-    out = {}
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            m = re.match(r"^([A-Za-z_][\w-]*):\s*(.+?)\s*$", line)
+def parse_manifest(text: str) -> dict:
+    """Tiny YAML subset: top-level scalars, one list of flat dicts (files)."""
+    data: dict = {}
+    list_key, item = None, None
+    for raw in text.splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        if raw.startswith(" ") or raw.startswith("- "):
+            if list_key is None:
+                continue
+            s = raw.strip()
+            if s.startswith("- "):
+                item = {}
+                data[list_key].append(item)
+                k, v = _kv(s[2:])
+                item[k] = v
+            elif item is not None:
+                k, v = _kv(s)
+                item[k] = v
+            continue
+        k, v = _kv(raw)
+        if v == "":
+            data[k] = []
+            list_key, item = k, None
+        elif v == "[]":
+            data[k] = []
+            list_key, item = None, None
+        else:
+            data[k] = v
+            list_key, item = None, None
+    return data
+
+
+def load_source(src: Path):
+    mf = src / "persona.yaml"
+    if not mf.is_file():
+        die(f"source manifest not found: {mf}")
+    manifest_bytes = mf.read_bytes()
+    m = parse_manifest(manifest_bytes.decode("utf-8"))
+    files: "list[tuple[str, str, bytes]]" = []
+    for f in m.get("files") or []:
+        name, load = f.get("name"), f.get("load", "on-demand")
+        p = src / name
+        if not p.is_file():
+            die(f"manifest lists missing file: {p}")
+        files.append((name, load, p.read_bytes()))
+    return m, manifest_bytes, files
+
+
+# ---------------------------------------------------------------- validate
+
+def validate_source(src: Path):
+    m, manifest_bytes, files = load_source(src)
+    errors: "list[str]" = []
+    warnings: "list[str]" = []
+
+    if not ID_RE.match(str(m.get("id", ""))):
+        errors.append(f"id invalid or missing: {m.get('id')!r} (want ^[a-z0-9][a-z0-9-]*$)")
+    if not m.get("version"):
+        errors.append("version missing in persona.yaml")
+    if not files:
+        errors.append("manifest lists no files")
+    if not manifest_bytes.decode("utf-8", "replace").strip():
+        errors.append("persona.yaml is empty")
+
+    for name, load, content in files:
+        if load not in ("always-on", "session-start", "on-demand"):
+            errors.append(f"{name}: unknown load hint {load!r}")
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError:
+            errors.append(f"{name}: not valid utf-8")
+        if not content.endswith(b"\n"):
+            errors.append(f"{name}: must end with a newline (byte-exact envelopes need it)")
+
+    # anchor registry sync: anchors in IDENTITY/SOUL vs CONTEXT slot table
+    by_name = {name: content for name, _, content in files}
+    anchors: "set[str]" = set()
+    for name in ("IDENTITY.md", "SOUL.md"):
+        if name in by_name:
+            anchors |= set(ANCHOR_RE.findall(by_name[name].decode("utf-8")))
+    ctx_rows: "set[str]" = set()
+    if "CONTEXT.md" in by_name:
+        text = by_name["CONTEXT.md"].decode("utf-8")
+        match = re.search(r"## Slot registry.*?(?=\n## |\Z)", text, re.S)
+        if match:
+            ctx_rows = set(re.findall(r"^\|\s*([A-Z]+_[A-Z0-9_]+)\s*\|", match.group(0), re.M))
+    missing = anchors - ctx_rows
+    extra = ctx_rows - anchors
+    if missing:
+        errors.append(f"anchors missing from CONTEXT slot registry: {sorted(missing)}")
+    if extra:
+        errors.append(f"CONTEXT slot registry rows without a live anchor: {sorted(extra)}")
+
+    # bare "Section N" refs outside AGENTS.md (cross-file refs must be by name)
+    for name, _, content in files:
+        if name != "AGENTS.md" and re.search(r"Section \d|§\d", content.decode("utf-8")):
+            warnings.append(f"{name}: bare 'Section N' reference — use a section/file name instead")
+
+    # unresolved placeholders when no vars in play is fine at pack time; just report
+    for name, _, content in files:
+        found = set(PLACEHOLDER_RE.findall(content.decode("utf-8")))
+        if found:
+            warnings.append(f"{name}: placeholders present {sorted(found)} — bind with --var to fill")
+
+    return m, manifest_bytes, files, errors, warnings
+
+
+# ---------------------------------------------------------------- pack
+
+def canonical_hash(manifest_bytes: bytes, files: "list[tuple[str, bytes]]") -> str:
+    h = hashlib.sha256(b"persona-bundle-v1\n")
+    h.update(manifest_bytes)
+    h.update(b"\x00")
+    for name, content in files:
+        h.update(name.encode())
+        h.update(b"\x00")
+        h.update(len(content).to_bytes(8, "big"))
+        h.update(content)
+    return h.hexdigest()[:HASH_LEN]
+
+
+def index_file(pid: str) -> Path:
+    return BUNDLES_DIR / pid / "index.json"
+
+
+def load_index(pid: str) -> dict:
+    p = index_file(pid)
+    if p.is_file():
+        return json.loads(p.read_text(encoding="utf-8"))
+    return {"persona": pid, "bundles": []}
+
+
+def save_index(pid: str, idx: dict) -> None:
+    index_file(pid).parent.mkdir(parents=True, exist_ok=True)
+    index_file(pid).write_text(json.dumps(idx, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def resolve_ref(ref: str) -> "tuple[str, str]":
+    if "@" in ref:
+        pid, h = ref.split("@", 1)
+        return pid, h
+    idx = load_index(ref)
+    if not idx["bundles"]:
+        die(f"persona {ref!r} has no packed bundles yet")
+    return ref, idx["bundles"][-1]["hash"]
+
+
+def load_bundle(pid: str, h: str) -> "tuple[bytes, dict[str, bytes], dict[str, str]]":
+    bdir = BUNDLES_DIR / pid / h
+    if not bdir.is_dir():
+        die(f"bundle {pid}@{h} not found in local registry ({bdir}) — pack it or git pull")
+    manifest_bytes = (bdir / "persona.yaml").read_bytes()
+    m = parse_manifest(manifest_bytes.decode("utf-8"))
+    files: "dict[str, bytes]" = {}
+    loads: "dict[str, str]" = {}
+    for f in m["files"]:
+        name, load = f["name"], f.get("load", "on-demand")
+        files[name] = (bdir / name).read_bytes()
+        loads[name] = load
+    return manifest_bytes, files, loads
+
+
+# ---------------------------------------------------------------- adapters
+
+def block_regex(pid: str) -> "re.Pattern[str]":
+    return re.compile(
+        r"<!-- persona:" + re.escape(pid) + r"@\S+ BEGIN -->\n.*?\n<!-- persona:"
+        + re.escape(pid) + r"@\S+ END -->\n?",
+        re.S,
+    )
+
+
+def inner_regex(pid: str) -> "re.Pattern[str]":
+    return re.compile(
+        r"<!-- persona:" + re.escape(pid) + r"@\S+ BEGIN -->\n(.*?)\n<!-- persona:"
+        + re.escape(pid) + r"@\S+ END -->",
+        re.S,
+    )
+
+
+class FileAdapter:
+    """openclaw-style host: each file lives inside a managed block envelope."""
+    name = "file"
+    aliases = ("openclaw",)
+
+    @staticmethod
+    def place(target: Path, pid: str, h: str, files: dict, loads: dict) -> None:
+        target.mkdir(parents=True, exist_ok=True)
+        for name, content in files.items():
+            p = target / name
+            block = (
+                f"<!-- persona:{pid}@{h} BEGIN -->\n"
+                + content.decode("utf-8")
+                + f"<!-- persona:{pid}@{h} END -->\n"
+            )
+            if not p.exists():
+                p.write_text(f"# persona:{pid}@{h} managed file\n\n" + block, encoding="utf-8")
+            else:
+                text = p.read_text(encoding="utf-8")
+                pat = block_regex(pid)
+                if pat.search(text):
+                    text = pat.sub(lambda _m: block, text)
+                else:
+                    text = text.rstrip("\n") + "\n\n" + block
+                p.write_text(text, encoding="utf-8")
+
+    @staticmethod
+    def readback(target: Path, pid: str, names: list, loads: dict):
+        if not target.is_dir():
+            return None
+        out: "dict[str, bytes]" = {}
+        pat = inner_regex(pid)
+        for name in names:
+            p = target / name
+            if not p.is_file():
+                continue
+            m = pat.search(p.read_text(encoding="utf-8"))
             if m:
-                v = m.group(2).strip().strip("'\"")
-                out[m.group(1)] = v
+                out[name] = (m.group(1) + "\n").encode("utf-8")
+        return out
+
+    @staticmethod
+    def remove(target: Path, pid: str) -> None:
+        if not target.is_dir():
+            return
+        pat = block_regex(pid)
+        for p in target.glob("*"):
+            if not p.is_file():
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            if pat.search(text):
+                new = pat.sub("", text)
+                new = re.sub(r"\n{3,}", "\n\n", new).strip("\n")
+                if new:
+                    p.write_text(new + "\n", encoding="utf-8")
+                else:
+                    p.unlink()
+
+
+class DshAdapter:
+    """dsh-style host: always-on files concatenated into one self-describing
+    prefix artifact; on-demand files delivered as plain workspace copies."""
+    name = "dsh"
+    PREFIX = "persona.prefix.txt"
+
+    @staticmethod
+    def place(target: Path, pid: str, h: str, files: dict, loads: dict) -> None:
+        target.mkdir(parents=True, exist_ok=True)
+        parts = [f"<!-- persona:{pid}@{h} -->\n"]
+        for name, content in files.items():  # manifest order
+            if loads.get(name) == "always-on":
+                parts.append(f"<!-- persona:file {name} -->\n" + content.decode("utf-8"))
+        (target / DshAdapter.PREFIX).write_text("".join(parts), encoding="utf-8")
+        for name, content in files.items():
+            if loads.get(name) != "always-on":
+                (target / name).write_bytes(content)
+
+    @staticmethod
+    def readback(target: Path, pid: str, names: list, loads: dict):
+        if not target.is_dir():
+            return None
+        out: "dict[str, bytes]" = {}
+        pfx = target / DshAdapter.PREFIX
+        if pfx.is_file():
+            text = pfx.read_text(encoding="utf-8")
+            pieces = re.split(r"<!-- persona:file (.+?) -->\n", text)
+            # pieces: [pre, name1, body1, name2, body2, ...]
+            for i in range(1, len(pieces) - 1, 2):
+                out[pieces[i]] = pieces[i + 1].encode("utf-8")
+        for name in names:
+            if loads.get(name) != "always-on":
+                p = target / name
+                if p.is_file():
+                    out[name] = p.read_bytes()
+        return out
+
+    @staticmethod
+    def remove(target: Path, pid: str) -> None:
+        if not target.is_dir():
+            return
+        pfx = target / DshAdapter.PREFIX
+        if pfx.is_file():
+            pfx.unlink()
+
+
+ADAPTERS: dict = {FileAdapter.name: FileAdapter, DshAdapter.name: DshAdapter}
+for a in (FileAdapter, DshAdapter):
+    for alias in getattr(a, "aliases", ()):  # type: ignore[attr-defined]
+        ADAPTERS[alias] = a
+
+
+def get_adapter(host: str):
+    if host not in ADAPTERS:
+        die(f"unknown host adapter {host!r} (have: {', '.join(sorted(ADAPTERS))})")
+    return ADAPTERS[host]
+
+
+# ---------------------------------------------------------------- render
+
+def render_files(files: dict, variables: dict) -> dict:
+    if not variables:
+        return files
+    out = {}
+    for name, content in files.items():
+        text = content.decode("utf-8")
+        for k, v in variables.items():
+            text = text.replace("{{" + k + "}}", v)
+        out[name] = text.encode("utf-8")
     return out
 
 
-def read_parts(src):
-    """读取源目录分区：返回 (version, identity文本, soul文本, [contract文本], [domain文本])。"""
-    meta = read_yaml_scalars(os.path.join(src, "persona.yaml"))
-    version = meta.get("version", "0.0.0")
-
-    def _read(name, required=True):
-        p = os.path.join(src, name)
-        if os.path.isfile(p):
-            return open(p, encoding="utf-8").read().strip()
-        if required:
-            die(f"{name} 缺失（最小可用要求 IDENTITY.md + soul.md + persona.yaml）")
-        return ""
-
-    identity = _read("IDENTITY.md")
-    soul = _read("soul.md")
-
-    contracts, domains = [], []
-    for sub, bucket in (("contract", contracts), ("domain", domains)):
-        d = os.path.join(src, sub)
-        if os.path.isdir(d):
-            for fn in sorted(os.listdir(d)):
-                if fn.endswith(".md"):
-                    bucket.append(open(os.path.join(d, fn), encoding="utf-8").read().strip())
-    return version, identity, soul, contracts, domains
+def derived_hash(manifest_bytes: bytes, files: dict) -> str:
+    # files preserves the manifest order (dict insertion order), so a render
+    # with no substitutions yields exactly the bundle hash.
+    return canonical_hash(manifest_bytes, list(files.items()))
 
 
-def flatten_source(src):
-    """展平 IDENTITY.md + soul.md + contract/*.md + domain/*.md，返回 (prefix正文, version)。"""
-    version, identity, soul, contracts, domains = read_parts(src)
-    parts = [p for p in (identity, soul, *contracts, *domains) if p]
-    body = "\n\n".join(parts)
-    fp = FINGERPRINT.format(version)
-    if fp not in body:
-        body = f"{fp}\n{body}"
-    return body, version
+# ---------------------------------------------------------------- bindings
+
+def load_bindings() -> dict:
+    if BINDINGS_FILE.is_file():
+        return json.loads(BINDINGS_FILE.read_text(encoding="utf-8"))
+    return {"bindings": []}
 
 
-# ---------- openclaw 宿主（SOUL.md + AGENTS.md 托管区块落位） ----------
-def _oc_block(version, body):
-    """生成托管区块：BEGIN/END 标记内含指纹行，区块外内容归宿主所有。"""
-    return (
-        f"<!-- persona:{OC_PERSONA_ID}@{version} BEGIN -->\n"
-        f"{FINGERPRINT.format(version)}\n"
-        f"{body}\n"
-        f"<!-- persona:{OC_PERSONA_ID}@{version} END -->"
-    )
+def save_bindings(data: dict) -> None:
+    BINDINGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def compile_openclaw():
-    """编译产物：openclaw/IDENTITY.md（身份事实）、SOUL.md（气质语气）、AGENTS.md（契约+域规格）。
-
-    对齐 README 六文件布局的常驻层：IDENTITY/SOUL/AGENTS 均为宿主常驻加载面，
-    裁决性内容只进这三个文件；TOOLS/CONTEXT/DESIGN/MEMORY 等按需层不入编译。
-    """
-    src = find_source_dir()
-    version, identity, soul, contracts, domains = read_parts(src)
-    os.makedirs(OC_DIR, exist_ok=True)
-    header = (f"<!-- persona-stack 编译产物（禁止手工编辑托管区块；区块外内容归宿主所有）\n"
-              f"     source: {os.path.basename(src)}  version: {version}  "
-              f"generated: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} -->")
-
-    docs = [
-        (OC_IDENTITY_ART, "IDENTITY", identity),
-        (OC_SOUL_ART, "SOUL", soul),
-        (OC_AGENTS_ART, "AGENTS", "\n\n".join(contracts + domains)),
-    ]
-    for path, title, body in docs:
-        open(path, "w", encoding="utf-8").write(
-            f"{header}\n\n# {title}\n\n{_oc_block(version, body)}\n")
-    log(f"编译完成: IDENTITY.md + SOUL.md + AGENTS.md (version={version})")
-    return OC_IDENTITY_ART, OC_SOUL_ART, OC_AGENTS_ART
+def find_binding(data: dict, slot: str) -> "dict | None":
+    for b in data["bindings"]:
+        if b["slot"] == slot:
+            return b
+    return None
 
 
-def oc_apply(target, artifacts):
-    """托管区块三态落位：无标记追加 / 有标记换块 / 目标不存在则整文件写入。
+# ---------------------------------------------------------------- receipts
 
-    返回备份 dict（路径 → 原内容或 None=原不存在），供失败还原。
-    """
-    backups = {}
-    for art in artifacts:
-        name = os.path.basename(art)
-        target_path = os.path.join(target, name)
-        art_text = open(art, encoding="utf-8").read()
-        m = OC_BLOCK_RE.search(art_text)
-        if not m:
-            die(f"编译产物缺托管区块: {art}")
-        new_block = m.group(0).rstrip("\n")
+def receipt(slot: str, **payload) -> None:
+    RECEIPTS_DIR.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", slot)
+    payload = {"ts": now_iso(), "slot": slot, **payload}
+    with open(RECEIPTS_DIR / f"{safe}.jsonl", "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
-        if os.path.exists(target_path):
-            content = open(target_path, encoding="utf-8").read()
-            backups[target_path] = content
-            if OC_BLOCK_RE.search(content):
-                content = OC_BLOCK_RE.sub(lambda _: new_block, content, count=1)
-                log(f"{target_path}: 已替换托管区块")
-            else:
-                content = content.rstrip() + "\n\n" + new_block + "\n"
-                log(f"{target_path}: 已追加托管区块（原有内容保留）")
+
+# ---------------------------------------------------------------- commands
+
+def cmd_validate(args) -> int:
+    src = Path(args.source).resolve()
+    m, _, files, errors, warnings = validate_source(src)
+    for w in warnings:
+        print(f"warn: {w}")
+    if errors:
+        for e in errors:
+            print(f"error: {e}")
+        print(f"validate: FAIL ({len(errors)} errors, {len(warnings)} warnings) — {src}")
+        return 1
+    print(f"validate: OK — persona {m.get('id')}@{m.get('version')}, {len(files)} files, "
+          f"{len(warnings)} warnings — {src}")
+    return 0
+
+
+def cmd_pack(args) -> int:
+    src = Path(args.source).resolve()
+    m, manifest_bytes, files, errors, warnings = validate_source(src)
+    for w in warnings:
+        print(f"warn: {w}")
+    if errors:
+        for e in errors:
+            print(f"error: {e}")
+        die("pack: source failed validation; fix the five files first")
+    pid = m["id"]
+    plain = [(name, content) for name, _, content in files]
+    h = canonical_hash(manifest_bytes, plain)
+    bdir = BUNDLES_DIR / pid / h
+    if bdir.exists():
+        same = (bdir / "persona.yaml").read_bytes() == manifest_bytes and all(
+            (bdir / name).read_bytes() == content for name, content in plain
+        )
+        if same:
+            print(f"pack: idempotent — {pid}@{h} already in registry")
+            return 0
+        die(f"pack: hash collision at {bdir} with different content")
+    bdir.mkdir(parents=True)
+    (bdir / "persona.yaml").write_bytes(manifest_bytes)
+    for name, content in plain:
+        (bdir / name).write_bytes(content)
+    idx = load_index(pid)
+    if not any(e["hash"] == h for e in idx["bundles"]):
+        idx["bundles"].append(
+            {"version": m["version"], "hash": h, "packed_at": now_iso(), "source": str(src)}
+        )
+    save_index(pid, idx)
+    print(f"pack: {pid}@{h} (v{m['version']}, {len(plain)} files) → {bdir}")
+    return 0
+
+
+def cmd_publish(args) -> int:
+    refs = []
+    for pid_dir in sorted(BUNDLES_DIR.glob("*")) if BUNDLES_DIR.is_dir() else []:
+        idx = load_index(pid_dir.name)
+        if idx["bundles"]:
+            refs.append(f"{pid_dir.name}@{idx['bundles'][-1]['hash']}")
+    msg = args.msg or ("registry: " + (", ".join(refs) if refs else "(empty)"))
+    for cmd in (
+        ["add", "-A"],
+        ["commit", "-m", msg],
+    ):
+        r = subprocess.run(["git", "-C", str(REPO), *cmd], capture_output=True, text=True)
+        if r.returncode != 0 and "nothing to commit" not in (r.stdout + r.stderr):
+            print(r.stdout.strip())
+            print(r.stderr.strip(), file=sys.stderr)
+            die(f"publish failed: {' '.join(cmd[:3])}")
+    remotes = subprocess.run(["git", "-C", str(REPO), "remote"], capture_output=True, text=True)
+    if remotes.stdout.strip():
+        r = subprocess.run(["git", "-C", str(REPO), "push"], capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"warn: git push failed — push manually later\n{r.stderr.strip()}")
         else:
-            backups[target_path] = None
-            content = art_text
-            log(f"{target_path}: 新建（首个托管区块）")
-        os.makedirs(target, exist_ok=True)
-        open(target_path, "w", encoding="utf-8").write(content)
-    return backups
+            print("publish: pushed to remote")
+    print(f"publish: committed ({msg})")
+    return 0
 
 
-def oc_restore(backups):
-    for path, old in backups.items():
-        if old is None:
-            if os.path.exists(path):
-                os.remove(path)
-                log(f"还原: 删除新建文件 {path}")
-        else:
-            open(path, "w", encoding="utf-8").write(old)
-            log(f"还原: {path}")
-
-
-def verify_openclaw(target):
-    version, identity, soul, contracts, domains = read_parts(find_source_dir())
-    fp = FINGERPRINT.format(version)
-    checks = [
-        (os.path.join(target, "IDENTITY.md"), identity),
-        (os.path.join(target, "SOUL.md"), soul),
-        (os.path.join(target, "AGENTS.md"), "\n\n".join(contracts + domains)),
-    ]
-    for path, body in checks:
-        if not os.path.isfile(path):
-            die(f"verify 失败：目标不存在 {path}")
-        content = open(path, encoding="utf-8").read()
-        if fp not in content:
-            die(f"verify 失败：{path} 不含指纹 {fp}")
-        key = [l.strip() for l in body.split("\n") if l.strip()][:2]
-        for kl in key:
-            if kl not in content:
-                die(f"verify 失败：{path} 缺少人设关键行: {kl[:40]}")
-    log(f"verify 通过：{target} 的 IDENTITY.md / SOUL.md / AGENTS.md 均含 {fp} 与关键行")
-
-
-def uninstall_openclaw(target):
-    """回滚=删整块：从三个目标文件摘除本 persona 的托管区块，其余内容保留。"""
-    for name in OC_ARTIFACTS:
-        p = os.path.join(target, name)
-        if not os.path.isfile(p):
-            continue
-        content = open(p, encoding="utf-8").read()
-        if not OC_BLOCK_RE.search(content):
-            log(f"{p}: 无本 persona 托管区块，跳过")
-            continue
-        new = OC_BLOCK_RE.sub("", content)
-        new = re.sub(r"\n{3,}", "\n\n", new).rstrip() + "\n"
-        open(p, "w", encoding="utf-8").write(new)
-        log(f"{p}: 已摘除托管区块")
-    log("uninstall 完成：宿主自有内容未动")
-
-
-# ---------- dsh dump 与 patch 生成 ----------
-def dump_config(out=DUMP_FILE, with_patch=False):
-    # 注意参数顺序：--dump-config/--profile 是 boot 层标志，必须在 web 之前；
-    # --patch 同样是 boot 标志。实测可用的 dump 顺序：
-    #   dsh --dump-config --profile web --patch X
-    cmd = [NODE24, DSH_ENTRY, "--dump-config", "--profile", PROFILE]
-    if with_patch:
-        cmd += ["--patch", PATCH_FILE]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        die(f"dsh --dump-config 失败: {r.stderr[:300]}")
-    open(out, "w", encoding="utf-8").write(r.stdout)
-    return r.stdout
-
-
-def extract_standard_block(dump_text):
-    """从 dump 提取 preset-standard 的完整 entry 块（到下一个顶层 - id:）。"""
-    lines = dump_text.split("\n")
-    s = next((i for i, l in enumerate(lines) if l.strip() == "- id: preset-standard"), None)
-    if s is None:
-        die("dump 里找不到 preset-standard")
-    e = next((i for i in range(s + 1, len(lines)) if lines[i].startswith("- id:")), len(lines))
-    block = [l for l in lines[s:e] if not l.startswith("# == ")]
-    return "\n".join(block).rstrip()
-
-
-def replace_prefix_in_block(block, new_prefix):
-    """在 standard 块里替换 persona 的 prefix（YAML block scalar 形式）。
-
-    dump 中 prefix 形如：`          prefix: You are a coding agent...`（单行）。
-    用 block scalar `|-` 承载多行人设，缩进 10 空格（prefix 在 config.plugins[].config 下）。
-    """
-    prefix_re = re.compile(r"^(\s*)prefix:.*$", re.M)
-    m = prefix_re.search(block)
-    if not m:
-        die("standard 块里找不到 persona prefix 行")
-
-    indent = m.group(1)
-    cont_indent = indent + "  "
-    scalar = "\n".join(cont_indent + ln if ln else "" for ln in new_prefix.split("\n"))
-    replacement = f"{indent}prefix: |-\n{scalar}"
-    new_block, n = prefix_re.subn(lambda _: replacement, block, count=1)
-    if n != 1:
-        die("prefix 替换数量异常")
-    return new_block
-
-
-def compile_patch():
-    src = find_source_dir()
-    prefix_body, version = flatten_source(src)
-    dump_text = dump_config()
-    block = extract_standard_block(dump_text)
-    new_block = replace_prefix_in_block(block, prefix_body)
-
-    out = (
-        "# persona-stack 生成的 dsh patch overlay（编译产物，禁止手工编辑）\n"
-        f"# source: {os.path.basename(src)}  version: {version}\n"
-        f"# generated: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        "# 由 start.sh 通过 --patch 挂载；uninstall = 摘掉该参数。\n"
-        f"{new_block}\n"
+def cmd_bind(args) -> int:
+    pid, h = resolve_ref(args.ref)
+    bdir = BUNDLES_DIR / pid / h
+    if not bdir.is_dir():
+        die(f"cannot bind: bundle {pid}@{h} not in registry — pack first")
+    variables = {}
+    for kv in args.var or []:
+        k, _, v = kv.partition("=")
+        variables[k] = v
+    data = load_bindings()
+    entry = find_binding(data, args.slot)
+    if entry is None:
+        entry = {"slot": args.slot}
+        data["bindings"].append(entry)
+    entry.update(
+        persona=pid,
+        hash=h,
+        host=args.host,
+        target=str(Path(args.target).resolve()),
+        vars=variables,
+        pin=bool(args.pin),
+        bound_at=now_iso(),
     )
-    os.makedirs(DSH_PATCH_DIR, exist_ok=True)
-    open(PATCH_FILE, "w", encoding="utf-8").write(out)
-    log(f"编译完成: {PATCH_FILE} ({len(new_block.splitlines())} 行, version={version})")
-    return PATCH_FILE
+    save_bindings(data)
+    print(f"bind: {args.slot} → {pid}@{h} (host={args.host}, target={entry['target']}"
+          + (", pin" if entry["pin"] else "") + ")")
+    return 0
 
 
-# ---------- start.sh 托管区块 ----------
-def read_start():
-    return open(START_SH, encoding="utf-8").read()
+def _slot_entries(data: dict, slot: "str | None"):
+    if slot:
+        e = find_binding(data, slot)
+        if e is None:
+            die(f"no binding for slot {slot!r}")
+        return [e]
+    return data["bindings"]
 
 
-def write_start(text):
-    shutil.copy2(START_SH, START_SH + ".bak-persona-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S"))
-    open(START_SH, "w", encoding="utf-8").write(text)
+def _check(e: dict):
+    """One binding → (state, detail). Loads bundle, renders, readbacks, compares."""
+    pid, h = e["persona"], e["hash"]
+    bdir = BUNDLES_DIR / pid / h
+    if not bdir.is_dir():
+        return "missing-bundle", f"{pid}@{h} not in local registry — pack or pull"
+    manifest_bytes, files, loads = load_bundle(pid, h)
+    rendered = render_files(files, e.get("vars") or {})
+    dh = derived_hash(manifest_bytes, rendered)
+    adapter = get_adapter(e["host"])
+    got = adapter.readback(Path(e["target"]), pid, list(files), loads)
+    if got is None or not got:
+        return "not-placed", "host target empty or absent — run reconcile"
+    names = [n for n in files if n not in got]
+    if names:
+        return "partial", f"missing on host: {', '.join(names)}"
+    diff = [n for n in files if got[n] != rendered[n]]
+    if diff:
+        state = "drifted" if not e.get("pin") else "drifted-pinned"
+        return state, f"host differs: {', '.join(diff)} (reconcile=revert, absorb=promote)"
+    return "converged", f"{pid}@{h}{'*' if e.get('vars') else ''} = {dh}"
 
 
-def patch_start_add():
-    s = read_start()
-    if MARK_BEGIN in s:
-        # 已挂载：更新 patch 路径行（本版路径固定，只需确认）
-        return False
-    marker = f"{MARK_BEGIN}\nDSH_PERSONA_PATCH=\"{PATCH_FILE}\"\nPERSONA_PATCH_ARG=\"--patch $DSH_PERSONA_PATCH\"\n{MARK_END}\n"
-    # 插到 dsh 启动 nohup 行之前
-    anchor = 'nohup "$NODE24" "$DSH_ENTRY" web --no-open --port 3080 \\\n  --trusted-host "$TRUSTED_HOST" > /tmp/dsh.log 2>&1 &'
-    if anchor not in s:
-        die("start.sh 里找不到 dsh 启动锚点，拒绝盲改")
-    # --patch 是 launcher 标志，必须紧跟 profile 名（web）之后、app 参数之前。
-    # 放最后会被 web app 当成未知选项 → dsh 起不来（实测）。
-    new_anchor = marker + 'nohup "$NODE24" "$DSH_ENTRY" web $PERSONA_PATCH_ARG --no-open --port 3080 \\\n  --trusted-host "$TRUSTED_HOST" > /tmp/dsh.log 2>&1 &'
-    write_start(s.replace(anchor, new_anchor, 1))
-    log("start.sh 已挂载 persona patch overlay（托管区块）")
-    return True
+def cmd_status(args) -> int:
+    data = load_bindings()
+    entries = _slot_entries(data, args.slot)
+    if not entries:
+        print("status: no bindings yet — persona bind <slot> <id[@hash]> --host --target")
+        return 0
+    bad = 0
+    for e in entries:
+        state, detail = _check(e)
+        mark = "" if state == "converged" else "  ←"
+        print(f"  {e['slot']:<24} {e['persona']}@{e['hash']:<{HASH_LEN}}  {state:<16} {detail}{mark}")
+        if state not in ("converged",):
+            bad += 1
+    return 0 if bad == 0 else 2
 
 
-def patch_start_remove():
-    s = read_start()
-    if MARK_BEGIN not in s:
-        log("start.sh 无 persona 托管区块，无需摘除")
-        return
-    new = re.sub(rf"{re.escape(MARK_BEGIN)}.*?{re.escape(MARK_END)}\n", "", s, flags=re.S)
-    new = new.replace('web $PERSONA_PATCH_ARG --no-open', 'web --no-open')
-    write_start(new)
-    log("start.sh 已摘除 persona patch overlay")
-
-
-# ---------- 重启与校验 ----------
-def restart_dsh():
-    env = dict(os.environ, FORCE_RESTART="1", PORT="8080")
-    # start.sh 自己会阻塞等 token 并写盘（最多 60s），这里同步等它返回即可。
-    r = subprocess.run(["bash", START_SH], cwd="/workspace/dsh-app", env=env,
-                       capture_output=True, text=True, timeout=120)
-    log("dsh 重启完成")
-    if r.returncode != 0:
-        # start.sh 非 0 = 启动失败（token 未生成 / 端口冲突），带错误回滚
-        raise RuntimeError(f"start.sh exit {r.returncode}: {(r.stderr or r.stdout)[-400:]}")
-    if not (os.path.exists("/tmp/dsh-token") and os.path.getsize("/tmp/dsh-token") > 0):
-        raise RuntimeError("重启后 token 为空")
-
-
-def verify():
-    """校验挂载 patch 后的有效配置里 standard.prefix 含源指纹且内容一致。
-
-    实际 dsh 启动经 start.sh 的 --patch 挂载本产物，故 verify 必须同样带 --patch，
-    否则读的是裸配置、必然不含指纹（上一版失败根因）。
-    """
-    src = find_source_dir()
-    prefix_body, version = flatten_source(src)
-    dump_text = dump_config(with_patch=True)
-    block = extract_standard_block(dump_text)
-    fp = FINGERPRINT.format(version)
-    if fp not in block:
-        die(f"verify 失败：dump 的 standard 段不含指纹 {fp}")
-    # 取 prefix 块内容做关键行比对（首行 + 末行）
-    key_lines = [l.strip() for l in prefix_body.split("\n") if l.strip()][:2]
-    for kl in key_lines:
-        if kl and kl not in block:
-            die(f"verify 失败：standard 段缺少人设关键行: {kl[:40]}")
-    # 证明运行中的 dsh 真的带 --patch 启动了（不是只有 patch 文件正确）
-    p = subprocess.run(["pgrep", "-f", "dsh/lib/bin.js web"], capture_output=True, text=True)
-    running_ok = False
-    for pid in p.stdout.split():
+def cmd_reconcile(args) -> int:
+    data = load_bindings()
+    entries = _slot_entries(data, args.slot)
+    if not entries:
+        print("reconcile: no bindings — nothing to converge")
+        return 0
+    if args.pull:
+        r = subprocess.run(["git", "-C", str(REPO), "pull", "--ff-only"], capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"warn: git pull failed, continuing with local registry\n{r.stderr.strip()}")
+        else:
+            print(f"pull: {r.stdout.strip().splitlines()[-1] if r.stdout.strip() else 'up to date'}")
+    failed = 0
+    for e in entries:
+        if e.get("pin"):
+            print(f"  {e['slot']}: pinned — skipping (drift is declared, not converged away)")
+            continue
+        pid, h = e["persona"], e["hash"]
+        bdir = BUNDLES_DIR / pid / h
+        if not bdir.is_dir():
+            receipt(e["slot"], persona=pid, hash=h, ok=False, detail="missing bundle")
+            print(f"  {e['slot']}: FAIL — bundle {pid}@{h} not in local registry (kept as-is)")
+            failed += 1
+            continue
+        manifest_bytes, files, loads = load_bundle(pid, h)
+        rendered = render_files(files, e.get("vars") or {})
+        dh = derived_hash(manifest_bytes, rendered)
+        adapter = get_adapter(e["host"])
         try:
-            cmdline = open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode()
-            if "--patch" in cmdline and "persona.patch.yml" in cmdline:
-                running_ok = True
-                break
-        except OSError:
+            adapter.place(Path(e["target"]), pid, dh, rendered, loads)
+        except Exception as exc:  # noqa: BLE001
+            receipt(e["slot"], persona=pid, hash=h, derived=dh, ok=False, detail=f"place: {exc}")
+            print(f"  {e['slot']}: FAIL — place error: {exc}")
+            failed += 1
             continue
-    if not running_ok:
-        die("verify 失败：运行中的 dsh 进程未带 persona --patch 参数")
-    log(f"verify 通过：standard.prefix 含指纹 + 人设关键行，且运行进程已挂载 patch（version={version}）")
+        state, detail = _check(e)
+        ok = state == "converged"
+        receipt(e["slot"], persona=pid, hash=h, derived=dh, ok=ok, detail=detail)
+        print(f"  {e['slot']}: {'converged' if ok else 'FAIL after place'} — {detail}")
+        if not ok:
+            failed += 1
+    return 0 if failed == 0 else 2
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["compile", "install", "verify", "uninstall"])
-    ap.add_argument("--host", default="dsh")
-    ap.add_argument("--target", default=None, help="openclaw 落位目标 workspace 目录")
+def cmd_revert(args) -> int:
+    data = load_bindings()
+    e = find_binding(data, args.slot)
+    if e is None:
+        die(f"no binding for slot {args.slot!r}")
+    idx = load_index(e["persona"])
+    hs = [b["hash"] for b in idx["bundles"]]
+    if e["hash"] not in hs:
+        die(f"current hash {e['hash']} not in index — registry and bindings disagree")
+    i = hs.index(e["hash"])
+    if i == 0:
+        die(f"{e['persona']}@{e['hash']} is the oldest packed version — nothing to revert to")
+    prev = hs[i - 1]
+    e["hash"] = prev
+    e["bound_at"] = now_iso()
+    save_bindings(data)
+    print(f"revert: {args.slot} → {e['persona']}@{prev}")
+    return cmd_reconcile(argparse.Namespace(slot=args.slot, pull=False))
+
+
+def cmd_absorb(args) -> int:
+    data = load_bindings()
+    e = find_binding(data, args.slot)
+    if e is None:
+        die(f"no binding for slot {args.slot!r}")
+    if not args.yes:
+        die("absorb overwrites the source files with host-side content — re-run with --yes")
+    pid, h = e["persona"], e["hash"]
+    idx = load_index(pid)
+    entry = next((b for b in idx["bundles"] if b["hash"] == h), None)
+    src = Path(entry["source"]) if entry and entry.get("source") else None
+    if src is None or not (src / "persona.yaml").is_file():
+        die("source directory from pack time is unreachable — absorb needs it")
+    _, files, loads = load_bundle(pid, h)
+    adapter = get_adapter(e["host"])
+    got = adapter.readback(Path(e["target"]), pid, list(files), loads)
+    if not got:
+        die("nothing readable on host side")
+    changed = []
+    for name in files:
+        if name in got and got[name] != files[name]:
+            (src / name).write_bytes(got[name])
+            changed.append(name)
+    if not changed:
+        print("absorb: host matches bundle — nothing to promote")
+        return 0
+    print(f"absorb: wrote back {len(changed)} files into source {src}: {', '.join(changed)}")
+    print("next: edit persona.yaml version → validate → pack → bind upgrade → reconcile")
+    return 0
+
+
+def cmd_list(args) -> int:
+    if BUNDLES_DIR.is_dir():
+        for pid_dir in sorted(BUNDLES_DIR.glob("*")):
+            idx = load_index(pid_dir.name)
+            for b in idx["bundles"]:
+                print(f"  {pid_dir.name}@{b['hash']}  v{b['version']}  {b['packed_at']}")
+    data = load_bindings()
+    for e in data["bindings"]:
+        print(f"  ~{e['slot']} → {e['persona']}@{e['hash']} ({e['host']})")
+    return 0
+
+
+# ---------------------------------------------------------------- cli
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="persona", description="five-file persona registry + reconciler")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("validate", help="lint the source five-file set")
+    p.add_argument("source")
+    p.set_defaults(fn=cmd_validate)
+
+    p = sub.add_parser("pack", help="snapshot source into an immutable bundle")
+    p.add_argument("source")
+    p.set_defaults(fn=cmd_pack)
+
+    p = sub.add_parser("publish", help="commit the registry (bundles + bindings) to git")
+    p.add_argument("--msg", help="override the commit message")
+    p.set_defaults(fn=cmd_publish)
+
+    p = sub.add_parser("bind", help="declare desired state for a host slot")
+    p.add_argument("slot")
+    p.add_argument("ref", help="persona or persona@hash")
+    p.add_argument("--host", required=True, choices=sorted(ADAPTERS))
+    p.add_argument("--target", required=True, help="host-side directory for this slot")
+    p.add_argument("--var", action="append", metavar="KEY=VAL", help="render variable (repeatable)")
+    p.add_argument("--pin", action="store_true", help="exempt this slot from reconcile")
+    p.set_defaults(fn=cmd_bind)
+
+    p = sub.add_parser("status", help="report drift for all/one binding(s)")
+    p.add_argument("slot", nargs="?")
+    p.set_defaults(fn=cmd_status)
+
+    p = sub.add_parser("reconcile", help="converge host(s) to their bindings")
+    p.add_argument("slot", nargs="?")
+    p.add_argument("--pull", action="store_true", help="git pull the registry first (dsh boot hook)")
+    p.set_defaults(fn=cmd_reconcile)
+
+    p = sub.add_parser("revert", help="point a slot at the previous packed version")
+    p.add_argument("slot")
+    p.set_defaults(fn=cmd_revert)
+
+    p = sub.add_parser("absorb", help="promote host-side edits back into the source")
+    p.add_argument("slot")
+    p.add_argument("--yes", action="store_true")
+    p.set_defaults(fn=cmd_absorb)
+
+    p = sub.add_parser("list", help="list registry bundles and bindings")
+    p.set_defaults(fn=cmd_list)
+
     args = ap.parse_args()
-
-    if args.cmd == "compile":
-        if args.host == "openclaw":
-            compile_openclaw()
-        else:
-            compile_patch()
-    elif args.cmd == "verify":
-        if args.host == "openclaw":
-            verify_openclaw(args.target or OC_DEFAULT_TARGET)
-        else:
-            verify()
-    elif args.cmd == "install":
-        if args.host == "openclaw":
-            target = args.target or OC_DEFAULT_TARGET
-            compile_openclaw()
-            backups = oc_apply(target, [OC_IDENTITY_ART, OC_SOUL_ART, OC_AGENTS_ART])
-            try:
-                verify_openclaw(target)
-            except SystemExit:
-                log("install 失败，还原目标文件...")
-                oc_restore(backups)
-                die("openclaw install 失败已还原")
-            return
-        if args.host != "dsh":
-            die("支持的 host: dsh / openclaw")
-        compile_patch()
-        patch_start_add()
-        # 备份用于回滚
-        backup = DUMP_FILE + ".pre-install"
-        shutil.copy2(DUMP_FILE, backup)
-        try:
-            restart_dsh()
-            verify()
-        except (SystemExit, RuntimeError) as e:
-            log(f"install 失败（{e}），执行回滚...")
-            patch_start_remove()
-            try:
-                restart_dsh()
-                log("回滚完成：dsh 已恢复原样")
-            except Exception as re:
-                die(f"回滚重启也失败，请人工检查 start.sh: {re}")
-            die("install 失败已回滚")
-    elif args.cmd == "uninstall":
-        if args.host == "openclaw":
-            uninstall_openclaw(args.target or OC_DEFAULT_TARGET)
-            return
-        patch_start_remove()
-        restart_dsh()
-        log("uninstall 完成：dsh 已恢复原 persona prefix")
+    return args.fn(args)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

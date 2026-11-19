@@ -1,3 +1,5 @@
 _archive/
 *.bak-persona-*
 __pycache__/
+receipts/
+_scratch/

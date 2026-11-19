@@ -1,36 +1,67 @@
-# 项目入口 · persona-stack
+# persona-stack · persona registry + reconciler
 
-| 字段 | 内容 |
-|---|---|
-| 项目名 | persona-stack（多 Agent 人设配置工具） |
-| 状态 | P0 最小链路已跑通（dsh standard + prefix 注入，install/verify/uninstall 全验证）；其余 preset 与 AGENTS.md 待第一批验证后铺 |
-| 关联仓库的 remote | 🚧 暂无（尚未建代码仓库；若后续建仓，在此登记 remote 地址） |
-| 指向仓库与交付物的链接 | 需求规格：[人设配置工具-需求规格.md](./人设配置工具-需求规格.md)；实现：[persona.py](./persona.py)；dsh 方案：[落位映射.md](./dsh/落位映射.md) / [勘察清单](./dsh/可适配替换清单-dsh-2026-11-18.md) / [approved.json](./dsh/approved.json)；A 产品（已冻结）：[网关注入引擎-Project.md](../../000_Inbox/网关注入引擎-Project.md) |
+五文件人设集（AGENTS / IDENTITY / SOUL / TOOLS / CONTEXT）的注入工具。
+**不是编译器**：五文件即最终形态，工具只做两件事——快照成不可变 bundle（registry）、
+把宿主侧副本收敛到快照（reconciler）。设计全文见 [DESIGN.md](./DESIGN.md)
+（旧架构的编译/拼装/硬编码源目录路线已被其取代；旧 PRD
+[人设配置工具-需求规格.md](./人设配置工具-需求规格.md) 仅作历史资料保留）。
 
-> 入口说明：按《收口目录部署方案（首次落地版）》§6，项目入口文档是代码仓库与项目之间的唯一纽带——代码事实以仓库为准，项目过程资料保留在本目录。当前无代码仓库，remote 留空待建仓后补，不编造。
-
-## 目录模型（2026-11-18 确认）
+## 目录模型
 
 ```
-persona-stack/
-├── persona-<YYMMDD>-v<x.y>/   ① 人写源目录：一个版本一个目录，唯一事实源
-│   └── (persona.yaml / soul.md / contract/ / domain/)
-├── dsh/                       ② dsh 已验证方案：勘察清单 + 落位映射 + approved.json + persona.patch.yml（编译产物）
-├── alma/                      ② alma 已验证方案（待勘察）
-├── persona.py                   P0 编译落位实现（compile/install/verify/uninstall）
-└── 人设配置工具-需求规格.md      PRD（四层模型见 §2）
+persona-stack/                ← 本仓库 = git registry（seam ②）
+├── persona.py                registry + reconciler + adapters，单文件 CLI
+├── DESIGN.md                 设计定稿（四不变式、三接缝、决策记录）
+├── bundles/<id>/<hash>/      不可变快照：persona.yaml + 五文件（只进不改）
+├── bindings.json             绑定表：slot → persona@hash（宿主应然状态，提交）
+├── receipts/                 回执流（运行时状态，gitignore）
+├── _archive/                 旧 v2.0 架构归档（gitignore）
+└── _scratch/                 本机测试落位（gitignore）
 ```
 
-源目录只管"我是谁"（版本化），方案目录只管"我在这个 agent 怎么落地、已验证"（固定名、不跟版本走）。源升版须重验并更新方案，旧方案移入各 `<host>/_archive/`。详见 PRD §1/§2/§4.2。
+人设源目录（本机）：`agents-box/EN/` —— 五文件 + `persona.yaml` 清单。
+版本史由仓库 `bundles/` + git 提交承担；源目录是编辑现场，不是版本库。
 
-## P0 用法
+## 快速上手
 
 ```bash
-P=001_OcLedger/100_Works/persona-stack/persona.py   # 相对 /workspace/dsh-app
-python3 $P compile                    # 源目录 → dsh/persona.patch.yml
-python3 $P install --host dsh         # 挂载 + 重启 + verify（失败自动回滚）
-python3 $P verify                     # 校验运行进程与有效配置
-python3 $P uninstall                  # 摘除 + 重启，恢复 dsh 原样
+python persona.py validate <源目录>                # lint：清单/锚点注册表同步/按名引用
+python persona.py pack <源目录>                   # → bundles/xiaoxiao/<hash>/，幂等
+python persona.py publish                         # git 提交 + push（不可变发布）
+python persona.py bind <slot> --host file|dsh --target <目录> xiaoxiao[@hash]
+python persona.py status [slot]                   # 漂移报告（exit 0=全收敛, 2=有漂移）
+python persona.py reconcile [slot] [--pull]       # 收敛；漂移默认按 revert 恢复
+python persona.py revert <slot>                   # 绑定指回上一版本并收敛
+python persona.py absorb <slot> --yes             # promote：宿主编辑写回源目录提案
 ```
 
-**当前源目录是示例人设**（YanShen 骨架，来自 persona-template），非用户真实人设——替换 `persona-*/soul.md` 与 `contract/*.md` 后重跑 install 即可生效。首版只在 standard preset 注入、契约合并进 prefix；ptc/cordis/minimal 与 AGENTS.md 未动。
+`--var KEY=VAL`（bind 时）走渲染层：占位符填充产派生 hash，同源多实例互不干扰。
+
+## 漂移策略（宿主侧被改了怎么办）
+
+| status | 处置 |
+|---|---|
+| converged | 无事 |
+| drifted | `reconcile` = revert（默认恢复原文）；或 `absorb` = promote（写回源目录走版本化晋升） |
+| drifted + `bind --pin` | 声明式豁免：该 slot 冻结，reconcile 跳过 |
+| missing-bundle | fail-closed：拒绝物化，保持现状，先 pack/pull |
+
+## 宿主接线
+
+- **file / openclaw**：每文件托管块信封（`<!-- persona:id@hash BEGIN/END -->`），
+  块外内容归宿主，uninstall 摘块还原。
+- **dsh**：always-on 文件拼成单一 `persona.prefix.txt`（自描述文件标记），
+  on-demand 文件随目录平铺。宿主机 start.sh 启动命令前加一行即开机自拉：
+
+  ```bash
+  python3 <repo>/persona.py reconcile --pull dsh.web
+  ```
+
+  （本机已验证 prefix 的 encode/decode 逐字节往返；真实 dsh 宿主机接线为 M2 收尾项。）
+
+## 状态（2026-11-19）
+
+- ✅ M1 registry（validate/pack/publish/list）—— EN 集 v1.0.0 已入库
+- ✅ reconciler + file/openclaw + dsh 适配器（往返、漂移检测、恢复、回执全过）
+- ✅ 旧架构归档 `_archive/`
+- 🚧 真实宿主接线（dsh start.sh / openclaw 目标机）与渲染层实测（EN 集暂无占位符）

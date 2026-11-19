@@ -1,5 +1,0 @@
-id: persona-261118-v1.0
-version: v2.0
-description: Muse Spark 覆盖版（由 muse-ai-AGENTS.md 按 persona-stack 结构拆解；护栏载荷已剥离，见 100_Docs/2026-11-19_muse-to-persona-stack-mapping.md）
-source: muse-ai-AGENTS.md
-template: mpj-persona/1
