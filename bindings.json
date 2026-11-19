@@ -1,14 +1,15 @@
 {
   "bindings": [
     {
-      "slot": "dsh.web",
+      "slot": "dsh.web.sandbox",
       "persona": "xiaoxiao",
       "hash": "c29bd653519cacb8",
       "host": "dsh",
       "target": "/workspace/dsh-app/persona",
       "vars": {},
       "pin": false,
-      "bound_at": "2026-11-19T09:38:38+00:00"
+      "device": "linux-sandbox",
+      "bound_at": "2026-11-19T09:46:59+00:00"
     }
   ]
 }

@@ -507,10 +507,12 @@ def cmd_bind(args) -> int:
         target=str(Path(args.target).resolve()),
         vars=variables,
         pin=bool(args.pin),
+        device=getattr(args, "device", None) or "",
         bound_at=now_iso(),
     )
     save_bindings(data)
     print(f"bind: {args.slot} → {pid}@{h} (host={args.host}, target={entry['target']}"
+          + (f", device={entry['device']}" if entry["device"] else "")
           + (", pin" if entry["pin"] else "") + ")")
     return 0
 
@@ -695,6 +697,7 @@ def main() -> int:
     p.add_argument("--target", required=True, help="host-side directory for this slot")
     p.add_argument("--var", action="append", metavar="KEY=VAL", help="render variable (repeatable)")
     p.add_argument("--pin", action="store_true", help="exempt this slot from reconcile")
+    p.add_argument("--device", default="", help="wiring identity tag (per-device, e.g. linux-sandbox / win-dsh)")
     p.set_defaults(fn=cmd_bind)
 
     p = sub.add_parser("status", help="report drift for all/one binding(s)")

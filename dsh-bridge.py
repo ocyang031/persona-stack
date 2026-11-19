@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
-"""dsh-bridge · persona.prefix.txt → dsh patch overlay（M2 宿主接线）。
+"""dsh-bridge · persona.prefix.txt → dsh patch overlay（M2 宿主接线，多设备版）。
 
-registry+reconciler 架构中 dsh 适配器只物化 persona.prefix.txt；
-本桥接负责最后一公里：把 prefix 文本编译进 dsh 的 patch overlay，
-供 start.sh 的 --patch 挂载。编译逻辑与旧架构（99fa1f9）逐行一致。
+从 bindings.json 读取所有 host=dsh 的绑定（按 slot/device 标识区分设备），
+对每条绑定：物化产物（reconcile 已完成）中的 persona.prefix.txt 编译进
+dsh patch overlay，供 start.sh 的 --patch 挂载。编译逻辑与旧架构（99fa1f9）一致。
 
-  - dump 当前有效配置（--dump-config --profile web，不带 patch）
-  - 提取 preset-standard 完整 entry（浅覆盖语义要求保留全部插件）
-  - 将 persona 的 prefix 行替换为 block scalar（内容 = persona.prefix.txt）
-  - 写 <target>/persona.patch.yml
-  - 自校验：反缩进后与 persona.prefix.txt 逐字节比对
+  用法：
+    dsh-bridge.py [slot ...]        # 无参数 = 处理全部 host=dsh 的绑定
+
+  每个产物 patch 头部携带接线标识：slot / device / persona@hash / target，
+  使多台设备的接线结果可区分、互不覆盖（slot 命名约定：dsh.web.<device>）。
+
+  自校验：反缩进后与 persona.prefix.txt 逐字节比对，不一致拒绝写盘。
 """
+import json
 import os
 import re
 import subprocess
 import sys
 
 REPO = "/root/001_OcLedger/100_Works/persona-stack"
-TARGET = "/workspace/dsh-app/persona"      # 与 bindings.json 的 dsh.web target 一致
-PREFIX_TXT = os.path.join(TARGET, "persona.prefix.txt")
-PATCH_FILE = os.path.join(TARGET, "persona.patch.yml")
+BINDINGS = os.path.join(REPO, "bindings.json")
 NODE24 = "/root/.nvm/versions/node/v24.21.0/bin/node"
 DSH_ENTRY = "/workspace/dsh-app/node_modules/@deepseek-ai/dsh/lib/bin.js"
 PROFILE = "web"
@@ -56,38 +57,65 @@ def replace_prefix(block, new_prefix):
     return new_block, cont
 
 
-def main():
-    if not os.path.isfile(PREFIX_TXT):
-        sys.exit(f"[bridge] ERROR: {PREFIX_TXT} missing — run: persona.py reconcile dsh.web")
-    prefix_body = open(PREFIX_TXT, encoding="utf-8").read()
-    # strip a single trailing newline so block scalar |- keeps content exact
+def compile_binding(e, dump_text):
+    slot, target = e["slot"], e["target"]
+    pid, h = e["persona"], e["hash"]
+    device = e.get("device") or "(no device tag)"
+    prefix_txt = os.path.join(target, "persona.prefix.txt")
+    patch_file = os.path.join(target, "persona.patch.yml")
+    if not os.path.isfile(prefix_txt):
+        print(f"[bridge] SKIP {slot}: {prefix_txt} missing — run: persona.py reconcile {slot}")
+        return False
+    prefix_body = open(prefix_txt, encoding="utf-8").read()
     if prefix_body.endswith("\n"):
         prefix_body = prefix_body[:-1]
 
-    block = extract_standard_block(dump_config())
+    block = extract_standard_block(dump_text)
     new_block, cont = replace_prefix(block, prefix_body)
 
+    # 接线标识：slot / device / persona@hash / target —— 设备可区分，产物不串线
     out = (
         "# dsh-bridge generated patch overlay (compiled from persona.prefix.txt; do not edit)\n"
-        f"# source: persona:xiaoxiao@c29bd653519cacb8 (slot dsh.web)\n"
+        f"# wiring: slot={slot}  device={device}\n"
+        f"# source: persona:{pid}@{h}  target={target}\n"
         f"{new_block}\n"
     )
-    os.makedirs(TARGET, exist_ok=True)
-    open(PATCH_FILE, "w", encoding="utf-8").write(out)
 
     # 自校验：反缩进 block scalar 与 prefix.txt 逐字节一致
     lines = out.split("\n")
     start = next(i for i, l in enumerate(lines) if l.strip() == "prefix: |-")
-    body, cont_prefix = [], " " * len(cont)
+    body = []
+    cont_prefix = " " * len(cont)
     for ln in lines[start + 1:]:
         if ln == "" or ln.startswith(cont_prefix) or ln.strip() == "":
-            body.append(ln[len(cont):] if ln.startswith(cont_prefix) else "")
+            body.append(ln[len(cont_prefix):] if ln.startswith(cont_prefix) else "")
         else:
             break
     decoded = "\n".join(body).rstrip("\n")
     if decoded != prefix_body:
-        sys.exit("[bridge] ERROR: roundtrip mismatch — prefix.txt vs patch scalar differ")
-    print(f"[bridge] OK: {PATCH_FILE} ({len(new_block.splitlines())} lines, roundtrip byte-exact)")
+        sys.exit(f"[bridge] ERROR: {slot} roundtrip mismatch — prefix.txt vs patch scalar differ")
+
+    os.makedirs(target, exist_ok=True)
+    open(patch_file, "w", encoding="utf-8").write(out)
+    print(f"[bridge] OK: {slot} (device={device}) → {patch_file} "
+          f"({len(new_block.splitlines())} lines, persona:{pid}@{h}, roundtrip byte-exact)")
+    return True
+
+
+def main():
+    slots = set(sys.argv[1:])
+    if not os.path.isfile(BINDINGS):
+        sys.exit(f"[bridge] ERROR: {BINDINGS} missing")
+    data = json.load(open(BINDINGS, encoding="utf-8-sig"))  # utf-8-sig: tolerate BOM
+    entries = [b for b in data.get("bindings", []) if b.get("host") == "dsh"]
+    if slots:
+        entries = [b for b in entries if b["slot"] in slots]
+    if not entries:
+        print("[bridge] no host=dsh bindings match" + (f" {sorted(slots)}" if slots else "") + " — nothing to do")
+        return
+    dump_text = dump_config()
+    ok = sum(compile_binding(e, dump_text) for e in entries)
+    print(f"[bridge] done: {ok}/{len(entries)} binding(s) compiled")
 
 
 if __name__ == "__main__":
