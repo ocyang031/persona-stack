@@ -1,0 +1,20 @@
+{
+  "doc": "persona-stack/dsh/approval/1",
+  "host": "dsh",
+  "applies-to": "persona-261118-v1.0",
+  "approved-at": "2026-11-18",
+  "scope": "P0 最小链路",
+  "actions": [
+    {
+      "source": "soul.md + contract/*",
+      "target": "preset-standard / plugins[id=persona].config.prefix",
+      "method": "block-scalar-replace",
+      "approved": true
+    }
+  ],
+  "excluded": [
+    { "item": "preset-ptc / cordis / minimal", "reason": "第一批验证后再铺" },
+    { "item": "AGENTS.md 托管区块追加", "reason": "契约已合并进 prefix，首版无需追加" }
+  ],
+  "note": "机器本地授权快照。首装全量确认已由用户 2026-11-18『只改 standard + 契约合并进 prefix』口径给出。E1 仓库化时此文件须 gitignore 排除。"
+}
