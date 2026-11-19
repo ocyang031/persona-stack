@@ -50,18 +50,24 @@ python persona.py absorb <slot> --yes             # promote：宿主编辑写回
 
 - **file / openclaw**：每文件托管块信封（`<!-- persona:id@hash BEGIN/END -->`），
   块外内容归宿主，uninstall 摘块还原。
-- **dsh**：always-on 文件拼成单一 `persona.prefix.txt`（自描述文件标记），
-  on-demand 文件随目录平铺。宿主机 start.sh 启动命令前加一行即开机自拉：
+- **dsh**：prefix 文件（always-on + session-start）拼成单一 `persona.prefix.txt`
+  （自描述文件标记），on-demand 文件随目录平铺。本机（win-dsh）接线为 profile
+  `cordis.patch.yml` 的 system-prompt shim：配置加载时读入 prefix.txt，单事实源、
+  fail-open；另一设备（linux-sandbox，dsh web 产品）以 `dsh-bridge.py` 将 prefix.txt
+  编译为 `--patch` overlay（自校验往返）。两种接线并存于注册表，按 slot/device 区分。
+  宿主机开机自拉（start.sh / 启动参数）：
 
   ```bash
-  python3 <repo>/persona.py reconcile --pull dsh.web
+  python3 <repo>/persona.py reconcile --pull --device <device> 
   ```
 
-  （本机已验证 prefix 的 encode/decode 逐字节往返；真实 dsh 宿主机接线为 M2 收尾项。）
+  多设备时用 `--device` 限定本机视角（否则会把别的设备的 slot 报成 not-placed）。
+  （本机已验证 prefix 的 encode/decode 逐字节往返 + 真实 profile 挂载。）
 
 ## 状态（2026-11-19）
 
 - ✅ M1 registry（validate/pack/publish/list）—— EN 集 v1.0.0 已入库
 - ✅ reconciler + file/openclaw + dsh 适配器（往返、漂移检测、恢复、回执全过）
 - ✅ 旧架构归档 `_archive/`
-- 🚧 真实宿主接线（dsh start.sh / openclaw 目标机）与渲染层实测（EN 集暂无占位符）
+- ✅ M2 真实宿主接线：win-dsh（profile shim，本机验证）+ linux-sandbox（dsh-bridge，远端）
+- 🚧 渲染层实测（EN 集暂无占位符）与 Operit 适配器（M5）

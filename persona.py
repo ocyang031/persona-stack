@@ -532,13 +532,16 @@ def cmd_bind(args) -> int:
     return 0
 
 
-def _slot_entries(data: dict, slot: "str | None"):
+def _slot_entries(data: dict, slot: "str | None", device: "str | None" = None):
     if slot:
         e = find_binding(data, slot)
         if e is None:
             die(f"no binding for slot {slot!r}")
         return [e]
-    return data["bindings"]
+    entries = data["bindings"]
+    if device is not None:
+        entries = [e for e in entries if e.get("device", "") == device]
+    return entries
 
 
 def _check(e: dict):
@@ -566,9 +569,11 @@ def _check(e: dict):
 
 def cmd_status(args) -> int:
     data = load_bindings()
-    entries = _slot_entries(data, args.slot)
+    entries = _slot_entries(data, args.slot, args.device)
     if not entries:
-        print("status: no bindings yet — persona bind <slot> <id[@hash]> --host --target")
+        print("status: no bindings match"
+              + (f" device {args.device!r}" if args.device else "")
+              + " — persona bind <slot> <id[@hash]> --host --target")
         return 0
     bad = 0
     for e in entries:
@@ -582,9 +587,11 @@ def cmd_status(args) -> int:
 
 def cmd_reconcile(args) -> int:
     data = load_bindings()
-    entries = _slot_entries(data, args.slot)
+    entries = _slot_entries(data, args.slot, args.device)
     if not entries:
-        print("reconcile: no bindings — nothing to converge")
+        print("reconcile: no bindings match"
+              + (f" device {args.device!r}" if args.device else "")
+              + " — nothing to converge")
         return 0
     if args.pull:
         r = subprocess.run(["git", "-C", str(REPO), "pull", "--ff-only"], capture_output=True, text=True)
@@ -717,10 +724,12 @@ def main() -> int:
 
     p = sub.add_parser("status", help="report drift for all/one binding(s)")
     p.add_argument("slot", nargs="?")
+    p.add_argument("--device", default=None, help="filter to one device's bindings (per-box view)")
     p.set_defaults(fn=cmd_status)
 
     p = sub.add_parser("reconcile", help="converge host(s) to their bindings")
     p.add_argument("slot", nargs="?")
+    p.add_argument("--device", default=None, help="filter to one device's bindings (per-box view)")
     p.add_argument("--pull", action="store_true", help="git pull the registry first (dsh boot hook)")
     p.set_defaults(fn=cmd_reconcile)
 
