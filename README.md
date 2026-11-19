@@ -55,10 +55,18 @@ python persona.py absorb <slot> --yes             # promote：宿主编辑写回
 - **file / openclaw**：每文件托管块信封（`<!-- persona:id@hash BEGIN/END -->`），
   块外内容归宿主，uninstall 摘块还原。
 - **dsh**：prefix 文件（always-on + session-start）拼成单一 `persona.prefix.txt`
-  （自描述文件标记），on-demand 文件随目录平铺。本机（win-dsh）接线为 profile
-  `cordis.patch.yml` 的 system-prompt shim：配置加载时读入 prefix.txt，单事实源、
-  fail-open；另一设备（linux-sandbox，dsh web 产品）以 `dsh-bridge.py` 将 prefix.txt
-  编译为 `--patch` overlay（自校验往返）。两种接线并存于注册表，按 slot/device 区分。
+  （自描述文件标记），on-demand 文件随目录平铺。接线按设备分两种，并存于注册表，
+  按 slot/device 区分：
+
+  - **win-dsh（本机 TUI）**：profile `cordis.patch.yml` 的 **preset-patch 行
+    （seam VII）**——替换 standard 预设里 persona 行的 `prefix` 配置为「配置加载时
+    读 `persona.prefix.txt`」的 js 表达式。要点：TUI 会话的 persona 由 agent 预设
+    （dsh-persona）供给，会遮蔽部署级 `system-prompt.personaPrefix`（第一版 shim
+    打在部署级、被预设遮蔽未生效，已修正到预设层）。preset 内行不受 id 定位补丁
+    影响，必须用 preset-patch 接缝；行本身须为 `insert` 形式。
+  - **linux-sandbox（dsh web 产品）**：`dsh-bridge.py` 将 prefix.txt 编译为
+    `--patch` overlay（自校验往返）。
+
   宿主机开机自拉（start.sh / 启动参数）：
 
   ```bash
@@ -66,14 +74,16 @@ python persona.py absorb <slot> --yes             # promote：宿主编辑写回
   ```
 
   多设备时用 `--device` 限定本机视角（否则会把别的设备的 slot 报成 not-placed）。
-  （本机已验证 prefix 的 encode/decode 逐字节往返 + 真实 profile 挂载。）
+  注意：prefix 内容会成为 dsh-persona 模板（严格 `{{…}}` 渲染，未知引用抛错），
+  validate 已含占位符检查；dsh-persona 的 `suffix` 默认被遮蔽为空，本集用不到
+  suffix，无影响。
 
 ## 状态（2026-11-19）
 
 - ✅ M1 registry（validate/pack/publish/list）—— EN 集 v1.0.0 已入库
 - ✅ reconciler + file/openclaw + dsh 适配器（往返、漂移检测、恢复、回执全过）
 - ✅ 旧架构归档 `_archive/`
-- ✅ M2 真实宿主接线：win-dsh（profile shim，本机验证）+ linux-sandbox（dsh-bridge，远端）
+- ✅ M2 真实宿主接线：win-dsh（preset-patch 行，配置层已验证入库）+ linux-sandbox（dsh-bridge，远端）
 - ✅ M4 渲染层实测（renderlab 双实例 + 缺填拒绝 + 漂移恢复全过）
-- 🚧 会话级 persona 注入验证（win-dsh：进程重启后新会话确认身份；已诊断见提交记录）
+- 🚧 会话级 persona 注入终验（win-dsh：TUI 重启后新会话自报身份 + `/debug-prompt` 取证）
 - 🚧 Operit 适配器（M5）
