@@ -381,7 +381,8 @@ def derived_hash(manifest_bytes: bytes, files: dict) -> str:
 
 def load_bindings() -> dict:
     if BINDINGS_FILE.is_file():
-        return json.loads(BINDINGS_FILE.read_text(encoding="utf-8"))
+        # utf-8-sig: tolerate Windows-side edits that leave a BOM
+        return json.loads(BINDINGS_FILE.read_text(encoding="utf-8-sig"))
     return {"bindings": []}
 
 
