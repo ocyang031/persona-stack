@@ -36,6 +36,10 @@ python persona.py absorb <slot> --yes             # promote：宿主编辑写回
 ```
 
 `--var KEY=VAL`（bind 时）走渲染层：占位符填充产派生 hash，同源多实例互不干扰。
+实测（renderlab 测试人设）：同 bundle 两实例 `render.a`（Ada/Berlin）/`render.b`
+（Lin/Hangzhou）各自收敛、派生 hash 不同（136672b6…/c2ac89b9…）；改任一实例内容
+→ drifted → reconcile 按源恢复；漏填占位符 → `render-fail`（exit 2，拒绝物化，
+不产出半成品 persona）。占位符词汇表大小写敏感（`{{PERSON_name}}`）。
 
 ## 漂移策略（宿主侧被改了怎么办）
 
@@ -70,4 +74,6 @@ python persona.py absorb <slot> --yes             # promote：宿主编辑写回
 - ✅ reconciler + file/openclaw + dsh 适配器（往返、漂移检测、恢复、回执全过）
 - ✅ 旧架构归档 `_archive/`
 - ✅ M2 真实宿主接线：win-dsh（profile shim，本机验证）+ linux-sandbox（dsh-bridge，远端）
-- 🚧 渲染层实测（EN 集暂无占位符）与 Operit 适配器（M5）
+- ✅ M4 渲染层实测（renderlab 双实例 + 缺填拒绝 + 漂移恢复全过）
+- 🚧 会话级 persona 注入验证（win-dsh：进程重启后新会话确认身份；已诊断见提交记录）
+- 🚧 Operit 适配器（M5）

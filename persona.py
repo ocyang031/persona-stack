@@ -34,7 +34,7 @@ RECEIPTS_DIR = REPO / "receipts"
 HASH_LEN = 16
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 ANCHOR_RE = re.compile(r"\(([A-Z]+_[A-Z0-9_]+)\)")
-PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
+PLACEHOLDER_RE = re.compile(r"\{\{([A-Za-z][A-Za-z0-9_]*)\}\}")
 
 
 def now_iso() -> str:
@@ -382,6 +382,13 @@ def render_files(files: dict, variables: dict) -> dict:
         text = content.decode("utf-8")
         for k, v in variables.items():
             text = text.replace("{{" + k + "}}", v)
+        left = PLACEHOLDER_RE.findall(text)
+        if left:
+            raise KeyError(
+                f"render incomplete: {name} still carries placeholders {sorted(set(left))} "
+                f"(missing vars: {sorted(set(p[len('PERSON_'):] if p.startswith('PERSON_') else p for p in left))}) — "
+                "fill every placeholder or pin this binding"
+            )
         out[name] = text.encode("utf-8")
     return out
 
@@ -551,7 +558,10 @@ def _check(e: dict):
     if not bdir.is_dir():
         return "missing-bundle", f"{pid}@{h} not in local registry — pack or pull"
     manifest_bytes, files, loads = load_bundle(pid, h)
-    rendered = render_files(files, e.get("vars") or {})
+    try:
+        rendered = render_files(files, e.get("vars") or {})
+    except KeyError as exc:
+        return "render-fail", f"{exc}"
     dh = derived_hash(manifest_bytes, rendered)
     adapter = get_adapter(e["host"])
     got = adapter.readback(Path(e["target"]), pid, list(files), loads)
@@ -612,7 +622,13 @@ def cmd_reconcile(args) -> int:
             failed += 1
             continue
         manifest_bytes, files, loads = load_bundle(pid, h)
-        rendered = render_files(files, e.get("vars") or {})
+        try:
+            rendered = render_files(files, e.get("vars") or {})
+        except KeyError as exc:
+            receipt(e["slot"], persona=pid, hash=h, ok=False, detail=f"render: {exc}")
+            print(f"  {e['slot']}: FAIL — {exc}")
+            failed += 1
+            continue
         dh = derived_hash(manifest_bytes, rendered)
         adapter = get_adapter(e["host"])
         try:

@@ -1,0 +1,16 @@
+id: renderlab
+version: 1.0.0
+language: en
+files:
+  - name: AGENTS.md
+    load: always-on
+  - name: IDENTITY.md
+    load: session-start
+  - name: SOUL.md
+    load: session-start
+  - name: TOOLS.md
+    load: on-demand
+  - name: CONTEXT.md
+    load: on-demand
+placeholders: []
+notes: render-layer test persona
