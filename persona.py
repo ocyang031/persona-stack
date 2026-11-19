@@ -130,6 +130,9 @@ def validate_source(src: Path):
             errors.append(f"{name}: not valid utf-8")
         if not content.endswith(b"\n"):
             errors.append(f"{name}: must end with a newline (byte-exact envelopes need it)")
+        if b"\r" in content:
+            errors.append(f"{name}: contains CR — the dsh prefix rides a YAML scalar, and YAML "
+                          f"normalizes CRLF; byte-exact hosts need LF-only sources")
 
     # anchor registry sync: anchors in IDENTITY/SOUL vs CONTEXT slot table
     by_name = {name: content for name, _, content in files}
@@ -221,24 +224,28 @@ def load_bundle(pid: str, h: str) -> "tuple[bytes, dict[str, bytes], dict[str, s
 
 # ---------------------------------------------------------------- adapters
 
-def block_regex(pid: str) -> "re.Pattern[str]":
+def block_regex(pid: str) -> "re.Pattern[bytes]":
+    esc = re.escape(pid.encode("utf-8"))
     return re.compile(
-        r"<!-- persona:" + re.escape(pid) + r"@\S+ BEGIN -->\n.*?\n<!-- persona:"
-        + re.escape(pid) + r"@\S+ END -->\n?",
+        rb"<!-- persona:" + esc + rb"@\S+ BEGIN -->\n.*?\n<!-- persona:"
+        + esc + rb"@\S+ END -->\n?",
         re.S,
     )
 
 
-def inner_regex(pid: str) -> "re.Pattern[str]":
+def inner_regex(pid: str) -> "re.Pattern[bytes]":
+    esc = re.escape(pid.encode("utf-8"))
     return re.compile(
-        r"<!-- persona:" + re.escape(pid) + r"@\S+ BEGIN -->\n(.*?)\n<!-- persona:"
-        + re.escape(pid) + r"@\S+ END -->",
+        rb"<!-- persona:" + esc + rb"@\S+ BEGIN -->\n(.*?)\n<!-- persona:"
+        + esc + rb"@\S+ END -->",
         re.S,
     )
 
 
 class FileAdapter:
-    """openclaw-style host: each file lives inside a managed block envelope."""
+    """openclaw-style host: each file lives inside a managed-block envelope.
+    All placement is byte-level (no newline translation, no decode round
+    trips) so the host file lands byte-exact to the bundle content."""
     name = "file"
     aliases = ("openclaw",)
 
@@ -247,21 +254,20 @@ class FileAdapter:
         target.mkdir(parents=True, exist_ok=True)
         for name, content in files.items():
             p = target / name
-            block = (
-                f"<!-- persona:{pid}@{h} BEGIN -->\n"
-                + content.decode("utf-8")
-                + f"<!-- persona:{pid}@{h} END -->\n"
-            )
+            block = b"".join((
+                f"<!-- persona:{pid}@{h} BEGIN -->\n".encode("utf-8"),
+                content,
+                f"<!-- persona:{pid}@{h} END -->\n".encode("utf-8"),
+            ))
             if not p.exists():
-                p.write_text(f"# persona:{pid}@{h} managed file\n\n" + block, encoding="utf-8")
+                p.write_bytes(f"# persona:{pid}@{h} managed file\n\n".encode("utf-8") + block)
+                continue
+            data = p.read_bytes()
+            pat = block_regex(pid)
+            if pat.search(data):
+                p.write_bytes(pat.sub(lambda _m: block, data))
             else:
-                text = p.read_text(encoding="utf-8")
-                pat = block_regex(pid)
-                if pat.search(text):
-                    text = pat.sub(lambda _m: block, text)
-                else:
-                    text = text.rstrip("\n") + "\n\n" + block
-                p.write_text(text, encoding="utf-8")
+                p.write_bytes(data.rstrip(b"\n") + b"\n\n" + block)
 
     @staticmethod
     def readback(target: Path, pid: str, names: list, loads: dict):
@@ -273,9 +279,9 @@ class FileAdapter:
             p = target / name
             if not p.is_file():
                 continue
-            m = pat.search(p.read_text(encoding="utf-8"))
+            m = pat.search(p.read_bytes())
             if m:
-                out[name] = (m.group(1) + "\n").encode("utf-8")
+                out[name] = m.group(1) + b"\n"
         return out
 
     @staticmethod
@@ -286,35 +292,45 @@ class FileAdapter:
         for p in target.glob("*"):
             if not p.is_file():
                 continue
-            try:
-                text = p.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                continue
-            if pat.search(text):
-                new = pat.sub("", text)
-                new = re.sub(r"\n{3,}", "\n\n", new).strip("\n")
+            data = p.read_bytes()
+            if pat.search(data):
+                new = re.sub(rb"\n{3,}", b"\n\n", pat.sub(b"", data)).strip(b"\n")
                 if new:
-                    p.write_text(new + "\n", encoding="utf-8")
+                    p.write_bytes(new + b"\n")
                 else:
                     p.unlink()
 
 
+DSH_PREFIX_LOADS = ("always-on", "session-start")
+
+
+def dsh_prefix(pid: str, h: str, files: dict, loads: dict) -> str:
+    """One self-describing prefix artifact: header + in-prefix files in
+    manifest order, each behind a `<!-- persona:file NAME -->` marker so
+    readback can split byte-exactly."""
+    parts = [f"<!-- persona:{pid}@{h} -->\n"]
+    for name, content in files.items():
+        if loads.get(name) in DSH_PREFIX_LOADS:
+            parts.append(f"<!-- persona:file {name} -->\n")
+            parts.append(content.decode("utf-8"))
+    return "".join(parts)
+
+
 class DshAdapter:
-    """dsh-style host: always-on files concatenated into one self-describing
-    prefix artifact; on-demand files delivered as plain workspace copies."""
+    """dsh-style host: the system prompt is one stable prefix region, so the
+    session-start distinction collapses — everything session-start-or-stronger
+    is concatenated into one self-describing prefix artifact; on-demand files
+    are delivered as plain workspace copies the agent reaches by pointer."""
     name = "dsh"
     PREFIX = "persona.prefix.txt"
+    IN_PREFIX = DSH_PREFIX_LOADS
 
     @staticmethod
     def place(target: Path, pid: str, h: str, files: dict, loads: dict) -> None:
         target.mkdir(parents=True, exist_ok=True)
-        parts = [f"<!-- persona:{pid}@{h} -->\n"]
-        for name, content in files.items():  # manifest order
-            if loads.get(name) == "always-on":
-                parts.append(f"<!-- persona:file {name} -->\n" + content.decode("utf-8"))
-        (target / DshAdapter.PREFIX).write_text("".join(parts), encoding="utf-8")
+        (target / DshAdapter.PREFIX).write_bytes(dsh_prefix(pid, h, files, loads).encode("utf-8"))
         for name, content in files.items():
-            if loads.get(name) != "always-on":
+            if loads.get(name) not in DshAdapter.IN_PREFIX:
                 (target / name).write_bytes(content)
 
     @staticmethod
@@ -324,13 +340,12 @@ class DshAdapter:
         out: "dict[str, bytes]" = {}
         pfx = target / DshAdapter.PREFIX
         if pfx.is_file():
-            text = pfx.read_text(encoding="utf-8")
-            pieces = re.split(r"<!-- persona:file (.+?) -->\n", text)
-            # pieces: [pre, name1, body1, name2, body2, ...]
+            pieces = re.split(rb"<!-- persona:file (.+?) -->\n", pfx.read_bytes())
+            # pieces: [header, name1, body1, name2, body2, ...]
             for i in range(1, len(pieces) - 1, 2):
-                out[pieces[i]] = pieces[i + 1].encode("utf-8")
+                out[pieces[i].decode("utf-8")] = pieces[i + 1]
         for name in names:
-            if loads.get(name) != "always-on":
+            if loads.get(name) not in DshAdapter.IN_PREFIX:
                 p = target / name
                 if p.is_file():
                     out[name] = p.read_bytes()

@@ -10,6 +10,17 @@
       "pin": false,
       "device": "linux-sandbox",
       "bound_at": "2026-11-19T09:46:59+00:00"
+    },
+    {
+      "slot": "dsh.local",
+      "persona": "xiaoxiao",
+      "hash": "c29bd653519cacb8",
+      "host": "dsh",
+      "target": "D:\\00_WY\\100_Works\\dsh-workspace",
+      "vars": {},
+      "pin": false,
+      "device": "win-dsh",
+      "bound_at": "2026-11-19T09:41:22+00:00"
     }
   ]
 }
