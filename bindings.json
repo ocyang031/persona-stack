@@ -14,13 +14,13 @@
     {
       "slot": "dsh.local",
       "persona": "xiaoxiao",
-      "hash": "dc969109ebeffe42",
+      "hash": "70cf8591502a3d3d",
       "host": "dsh",
       "target": "D:\\00_WY\\100_Works\\dsh-workspace",
       "vars": {},
       "pin": false,
       "device": "win-dsh",
-      "bound_at": "2026-11-20T06:45:24+00:00"
+      "bound_at": "2026-11-20T06:45:41+00:00"
     }
   ]
 }

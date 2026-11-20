@@ -101,12 +101,19 @@ exit：0=全收敛；2=有漂移/缺件；其余=参数错。
 
 - 仓库位置：`D:\00_WY\400_Code\410_Remote\persona-stack`（本机 clone；权威在 GitHub）。
 - 编辑面 = 仓库内 `sources/<id>/`（外部草稿目录已废除并删除）。
+- **absorb 端到端实测通过（本轮）**：临时改落位 → drifted（exit 2）→ reconcile 恢复
+  → 再造临时版 → `absorb --yes`（写回 sources 提案）→ 升版本 → publish（v1.1.0）→
+  bind 升级 → reconcile 收敛 → 清测试标记再发 v1.1.1 → 全链 green。版本链
+  v1.0.0/v1.1.0/v1.1.1，verify 3 bundle 全过。绑定现指 v1.1.1。
+- absorb 健壮化：pack-time source 失效时回退 `sources/<id>/`（仓库迁移后旧
+  index 条目不再炸 absorb）。
 - M1 ✅ registry；M2 ✅ win-dsh 会话级闭环（枭枭生效，/debug-prompt 证据 d13d23f），
   linux-sandbox 待远端自验；M3 🚧 openclaw adapter 已实现，待真实宿主；M4 ✅ 渲染层
   （fixture 已清）；M5 🚧 未开工。
-- 已发布：`xiaoxiao@c29bd653519cacb8`（EN v1.0.0，sources 现场在仓库内 `sources/xiaoxiao/`）。
-- 绑定：`dsh.local`（win-dsh → `D:\00_WY\100_Works\dsh-workspace`）、
-  `dsh.web.sandbox`（linux-sandbox → `/workspace/dsh-app/persona`）。
+- 绑定：`dsh.local`（win-dsh → `D:\00_WY\100_Works\dsh-workspace`，现指
+  v1.1.1）、`dsh.web.sandbox`（linux-sandbox → `/workspace/dsh-app/persona`）。
+- 实测暴露的工具坑（已修）：`Path.write_text` 默认换行翻译会在 Windows 上把 LF
+  变 CRLF，破坏 readback 标记切分——落位/写回操作必须字节级（`write_bytes`）。
 
 ## 常见任务配方
 
