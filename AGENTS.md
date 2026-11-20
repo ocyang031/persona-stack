@@ -2,7 +2,8 @@
 
 > 给在本仓库工作的 agent：读完本文件即可上手开发。分工固定——AGENTS.md=机读操作、
 > README.md=人读用法、DESIGN.md=人读设计理由。注意命名碰撞：本文件是**仓库操作手册**，
-> 不是人设内容；人设五文件在 `D:\00_WY\100_Works\dsh-workspace\agents-box\EN\`（那边也有一个 AGENTS.md，是注入宿主的 persona 文件）。
+> 不是人设内容；人设五文件在 `sources/<id>/`（那边也有 AGENTS.md，是注入宿主的
+> persona 文件）。
 
 ## 项目一句话
 
@@ -10,32 +11,40 @@
 + reconciler（多宿主收敛）。不是编译器：五文件即最终形态，不拼装、不碎片化。
 
 **权威版本 = 本仓库 `bundles/`（远端 `git@github.com:ocyang031/persona-stack.git`，
-clone 即全量副本）**；本地五文件目录只是草稿编辑现场，其位置是每台机器的本地事实，
-记录在下表仅为本机操作。
+clone 即全量副本）**；`sources/<id>/` 是编辑现场（在仓库内、随 clone 分发），
+编辑 → `publish` 晋升，一步成版。
 
 ## 布局与权限
 
 | 路径 | 角色 | agent 读写权 |
 |---|---|---|
 | `persona.py` | 全部实现（CLI + adapter + registry + render，单文件） | 可改；改后 `python -m py_compile persona.py` 必过 |
+| `sources/<id>/` | 人设编辑现场（五文件 + persona.yaml，随 clone 分发，自由编辑） | 可编辑；晋升走 publish |
+| `verify.py` | bundles 完整性闸门（重算全部 bundle hash + index/绑定对账） | 可改；commit 前必须绿 |
+| `.githooks/pre-commit` | 提交闸门：跑 verify.py，bundles 被偷改则拒绝提交 | 启用方式：`git config core.hooksPath .githooks`（clone 后需一次性设置） |
 | `bindings.json` | 绑定表（宿主应然状态） | 可改；schema：slot/persona/hash/host/target/vars/pin/device/bound_at |
 | `bundles/<id>/<hash>/` | 不可变快照 | **只增不改不删**（纪律 1） |
 | `receipts/` | 回执流 | 只追加；gitignore |
 | `dsh-bridge.py` | linux-sandbox 设备接线胶水（**非适配器**，硬编码该机路径） | 原则上不改 |
 | `_archive/` `_scratch/` | 旧架构归档 / 本机临时 | gitignore，勿提交 |
-| （仓库外）`D:\00_WY\100_Works\dsh-workspace\agents-box\EN\` | 人设草稿目录（**本机**编辑现场；发布后权威版本在本仓库 bundles/） | 可编辑；改后走 pack 流程 |
+
+（外部草稿目录已废除：编辑面就是仓库内 `sources/`，2026-11-20 起生效。）
 
 ## 硬纪律（违反即错误）
 
 1. `bundles/` 只进不改：修正 = 新版本新 hash；回滚 = 绑定指回旧 hash。唯一例外
    = 从未被任何绑定消费的测试件（前例 renderlab：22dd80d 入库 → 03865f8 删除，
-   commit 信息必须写明理由）。
-2. `publish` = `git add -A && git commit && git push`（`persona.py publish` 已实现）。
+   commit 信息必须写明理由）。机器闸门：`verify.py`（pre-commit 自动跑）重算
+   全部 bundle hash，偷改已发布快照 = commit 被拒。
+2. `publish` = 自动晋升 + `git add -A && git commit && git push`：先对
+   `sources/<id>/` 逐个 pack（validate 不过即中止），再提交推送。人的发版动词
+   只有这一个。
 3. Windows 本机：只有 `python`（无 `py`）；文件操作全字节级（read_bytes/write_bytes）；
    源必须 LF-only、无 BOM（dsh 前缀走 YAML 标量，CRLF/CR 会破坏逐字节往返）；
    bindings.json 读取用 utf-8-sig 容 BOM，写回无 BOM。
 4. 测试 fixture 用完即清：删测试绑定（bindings.json）+ 测试 bundle + `_scratch/` 产物。
 5. 宿主自有内容永不被动（信封原则）；receipts 之外的运行时状态不碰。
+6. 新 clone 的一次性动作：`git config core.hooksPath .githooks`（启用提交闸门）。
 
 ## 命令面（9 动词）
 
@@ -90,22 +99,26 @@ exit：0=全收敛；2=有漂移/缺件；其余=参数错。
 
 ## 当前状态（2026-11-20）
 
-- 仓库位置：`D:\00_WY\400_Code\410_Remote\persona-stack`（本机 clone；权威在 GitHub，
-  上表草稿目录路径是本机事实，其他机器以自己 clone/草稿位置为准）。
+- 仓库位置：`D:\00_WY\400_Code\410_Remote\persona-stack`（本机 clone；权威在 GitHub）。
+- 编辑面 = 仓库内 `sources/<id>/`（外部草稿目录已废除并删除）。
 - M1 ✅ registry；M2 ✅ win-dsh 会话级闭环（枭枭生效，/debug-prompt 证据 d13d23f），
   linux-sandbox 待远端自验；M3 🚧 openclaw adapter 已实现，待真实宿主；M4 ✅ 渲染层
   （fixture 已清）；M5 🚧 未开工。
-- 已发布：`xiaoxiao@c29bd653519cacb8`（EN v1.0.0，草稿现场为本机上表目录）。
+- 已发布：`xiaoxiao@c29bd653519cacb8`（EN v1.0.0，sources 现场在仓库内 `sources/xiaoxiao/`）。
 - 绑定：`dsh.local`（win-dsh → `D:\00_WY\100_Works\dsh-workspace`）、
   `dsh.web.sandbox`（linux-sandbox → `/workspace/dsh-app/persona`）。
 
 ## 常见任务配方
 
-- **改人设内容**：在草稿目录（上表本机路径）编辑五文件 → `validate` → `pack` →
-  `publish`（推送 GitHub，权威版本落定）→ `reconcile dsh.local` → 提醒用户 `/restart`。
+- **改人设内容（正式版）**：编辑 `sources/xiaoxiao/` 五文件 → `publish`
+  （自动 validate+hash+快照+提交+推送）→ `reconcile dsh.local` → 提醒用户 `/restart`。
+- **临时人设（不发版）**：编辑 `sources/xiaoxiao/` → `reconcile dsh.local` → `/restart`；
+  不 pack 不 publish，`status` 会显示 drifted（这是「临时版生效中」的提示）。
+  远端设备不受影响（它们只认 bundles）。
 - **排查 persona 未生效**：`status dsh.local` → prefix.txt 在否/新否 → dump-config
   stderr → 引擎进程启动时间 vs prefix.txt mtime → 最后才怀疑接线本体。
-- **新设备接入**：`bind` 新 slot（带 `--device`）→ `reconcile` 物化 → 按「接线知识」
-  选接缝 → 会话级验证。
+- **新设备接入**：`clone` → `git config core.hooksPath .githooks`（一次性）→
+  `bind` 新 slot（带 `--device`）→ `reconcile` 物化 → 按「接线知识」选接缝 →
+  会话级验证。
 - **linux-sandbox 侧操作**：那边有本仓库 clone；`python3 persona.py reconcile --pull
   --device linux-sandbox` + `dsh-bridge.py`。
