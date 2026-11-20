@@ -1,0 +1,14 @@
+#!/bin/sh
+# persona-stack pre-commit gate: bundles immutability is enforced here.
+# Recomputes every bundle's content hash; a modified published bundle
+# fails the commit with instructions.
+python verify.py || {
+    cat >&2 <<'EOF'
+commit blocked: bundles integrity check failed.
+
+A published bundle's content no longer matches its hash (directory name).
+Editing happens in sources/<id>/ — then `python persona.py publish`.
+To restore a tampered bundle: git checkout -- bundles/
+EOF
+    exit 1
+}

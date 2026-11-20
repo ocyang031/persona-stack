@@ -29,6 +29,7 @@ except Exception:
 
 REPO = Path(__file__).resolve().parent
 BUNDLES_DIR = REPO / "bundles"
+SOURCES_DIR = REPO / "sources"
 BINDINGS_FILE = REPO / "bindings.json"
 RECEIPTS_DIR = REPO / "receipts"
 HASH_LEN = 16
@@ -482,6 +483,12 @@ def cmd_pack(args) -> int:
 
 
 def cmd_publish(args) -> int:
+    # 先晋升：sources/ 下每个 persona 都 pack 一遍（幂等——内容没变即跳过；
+    # 校验失败则中止，脏 sources 不得静默推送）。人的发版动词只有这一个。
+    if SOURCES_DIR.is_dir():
+        for src in sorted(SOURCES_DIR.iterdir()):
+            if src.is_dir() and (src / "persona.yaml").is_file():
+                cmd_pack(argparse.Namespace(source=str(src)))
     refs = []
     for pid_dir in sorted(BUNDLES_DIR.glob("*")) if BUNDLES_DIR.is_dir() else []:
         idx = load_index(pid_dir.name)
