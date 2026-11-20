@@ -13,9 +13,7 @@
 直接编辑本机落位目录里的 `persona.prefix.txt`（位置见 `bindings.json` 的
 `dsh.local` 绑定 target）→ 重启宿主。
 
-只有本机生效（reconcile 读的是 bundles 快照，不看 sources 草稿）。`status`
-显示 drifted = 临时版生效中的标记；想恢复正式版跑 `reconcile`；想转正跑
-`absorb dsh.local --yes` 后 `publish`。
+想恢复正式版跑 `reconcile`。
 
 **转正**：
 
