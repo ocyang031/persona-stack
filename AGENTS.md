@@ -9,6 +9,10 @@
 五文件人设集（AGENTS/IDENTITY/SOUL/TOOLS/CONTEXT）的注入工具 = registry（不可变快照）
 + reconciler（多宿主收敛）。不是编译器：五文件即最终形态，不拼装、不碎片化。
 
+**权威版本 = 本仓库 `bundles/`（远端 `git@github.com:ocyang031/persona-stack.git`，
+clone 即全量副本）**；本地五文件目录只是草稿编辑现场，其位置是每台机器的本地事实，
+记录在下表仅为本机操作。
+
 ## 布局与权限
 
 | 路径 | 角色 | agent 读写权 |
@@ -19,7 +23,7 @@
 | `receipts/` | 回执流 | 只追加；gitignore |
 | `dsh-bridge.py` | linux-sandbox 设备接线胶水（**非适配器**，硬编码该机路径） | 原则上不改 |
 | `_archive/` `_scratch/` | 旧架构归档 / 本机临时 | gitignore，勿提交 |
-| （仓库外）`D:\00_WY\100_Works\dsh-workspace\agents-box\EN\` | 人设源目录（编辑现场） | 可编辑；改后走 pack 流程 |
+| （仓库外）`D:\00_WY\100_Works\dsh-workspace\agents-box\EN\` | 人设草稿目录（**本机**编辑现场；发布后权威版本在本仓库 bundles/） | 可编辑；改后走 pack 流程 |
 
 ## 硬纪律（违反即错误）
 
@@ -86,21 +90,19 @@ exit：0=全收敛；2=有漂移/缺件；其余=参数错。
 
 ## 当前状态（2026-11-20）
 
-- 仓库已迁至 `D:\00_WY\400_Code\410_Remote\persona-stack`（规划归属地）；EN 人设源
-  目录暂留 `D:\00_WY\100_Works\dsh-workspace\agents-box\EN`（文档引用已改绝对路径，
-  待迁）。
-
+- 仓库位置：`D:\00_WY\400_Code\410_Remote\persona-stack`（本机 clone；权威在 GitHub，
+  上表草稿目录路径是本机事实，其他机器以自己 clone/草稿位置为准）。
 - M1 ✅ registry；M2 ✅ win-dsh 会话级闭环（枭枭生效，/debug-prompt 证据 d13d23f），
   linux-sandbox 待远端自验；M3 🚧 openclaw adapter 已实现，待真实宿主；M4 ✅ 渲染层
   （fixture 已清）；M5 🚧 未开工。
-- 已发布：`xiaoxiao@c29bd653519cacb8`（EN v1.0.0，源 `D:\00_WY\100_Works\dsh-workspace\agents-box\EN\`）。
+- 已发布：`xiaoxiao@c29bd653519cacb8`（EN v1.0.0，草稿现场为本机上表目录）。
 - 绑定：`dsh.local`（win-dsh → `D:\00_WY\100_Works\dsh-workspace`）、
   `dsh.web.sandbox`（linux-sandbox → `/workspace/dsh-app/persona`）。
 
 ## 常见任务配方
 
-- **改人设内容**：编辑 `D:\00_WY\100_Works\dsh-workspace\agents-box\EN\` 五文件 → `validate` → `pack` → `publish` →
-  `reconcile dsh.local` → 提醒用户 `/restart`。
+- **改人设内容**：在草稿目录（上表本机路径）编辑五文件 → `validate` → `pack` →
+  `publish`（推送 GitHub，权威版本落定）→ `reconcile dsh.local` → 提醒用户 `/restart`。
 - **排查 persona 未生效**：`status dsh.local` → prefix.txt 在否/新否 → dump-config
   stderr → 引擎进程启动时间 vs prefix.txt mtime → 最后才怀疑接线本体。
 - **新设备接入**：`bind` 新 slot（带 `--device`）→ `reconcile` 物化 → 按「接线知识」

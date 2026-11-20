@@ -2,17 +2,19 @@
 
 人设注入工具：五文件人设集（AGENTS / IDENTITY / SOUL / TOOLS / CONTEXT）→ 不可变快照 → 多宿主收敛。
 
-**解决什么问题**：人设只在源目录维护一处（`D:\00_WY\100_Works\dsh-workspace\agents-box\EN\`）；本工具把它打包成不可变版本（bundle），让任意多台宿主机上的副本自动对齐该版本，并报告谁被改了。
+**权威版本在 GitHub**：`git@github.com:ocyang031/persona-stack.git`。仓库里的 `bundles/` 就是人设的不可变版本库，clone 即全量副本。本地的五文件目录只是编辑草稿现场——在哪台机器、放在哪里，是各机器自己的事，不属于本仓库的事。
+
+**解决什么问题**：人设编辑一次、发布成不可变版本（bundle），任意多台宿主机上的副本自动对齐该版本，并报告谁被改了。
 
 ## 日常三条命令
 
 ```bash
-python persona.py status        # 看所有宿主是否收敛
-python persona.py reconcile      # 有漂移就恢复
-python persona.py pack D:\00_WY\100_Works\dsh-workspace\agents-box\EN     # 改了人设源之后发新版本（源目录暂留原处，待迁）
+python persona.py status           # 看所有宿主是否收敛
+python persona.py reconcile        # 有漂移就恢复
+python persona.py pack <草稿目录>  # 改了五文件之后发新版本
 ```
 
-改人设的完整流程：编辑 `D:\00_WY\100_Works\dsh-workspace\agents-box\EN\` 五文件 → `pack` → `publish` → `reconcile` → 重启 TUI。
+改人设的完整流程：在草稿目录编辑五文件 → `pack` → `publish`（提交并推送到 GitHub）→ 各宿主 `reconcile` → 重启宿主会话。
 
 ## 想深入
 
