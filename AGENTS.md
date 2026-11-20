@@ -2,7 +2,7 @@
 
 > 给在本仓库工作的 agent：读完本文件即可上手开发。分工固定——AGENTS.md=机读操作、
 > README.md=人读用法、DESIGN.md=人读设计理由。注意命名碰撞：本文件是**仓库操作手册**，
-> 不是人设内容；人设五文件在 `../EN/`（那边也有一个 AGENTS.md，是注入宿主的 persona 文件）。
+> 不是人设内容；人设五文件在 `D:\00_WY\100_Works\dsh-workspace\agents-box\EN\`（那边也有一个 AGENTS.md，是注入宿主的 persona 文件）。
 
 ## 项目一句话
 
@@ -19,7 +19,7 @@
 | `receipts/` | 回执流 | 只追加；gitignore |
 | `dsh-bridge.py` | linux-sandbox 设备接线胶水（**非适配器**，硬编码该机路径） | 原则上不改 |
 | `_archive/` `_scratch/` | 旧架构归档 / 本机临时 | gitignore，勿提交 |
-| （仓库外）`../EN/` | 人设源目录（编辑现场） | 可编辑；改后走 pack 流程 |
+| （仓库外）`D:\00_WY\100_Works\dsh-workspace\agents-box\EN\` | 人设源目录（编辑现场） | 可编辑；改后走 pack 流程 |
 
 ## 硬纪律（违反即错误）
 
@@ -89,13 +89,13 @@ exit：0=全收敛；2=有漂移/缺件；其余=参数错。
 - M1 ✅ registry；M2 ✅ win-dsh 会话级闭环（枭枭生效，/debug-prompt 证据 d13d23f），
   linux-sandbox 待远端自验；M3 🚧 openclaw adapter 已实现，待真实宿主；M4 ✅ 渲染层
   （fixture 已清）；M5 🚧 未开工。
-- 已发布：`xiaoxiao@c29bd653519cacb8`（EN v1.0.0，源 `../EN/`）。
+- 已发布：`xiaoxiao@c29bd653519cacb8`（EN v1.0.0，源 `D:\00_WY\100_Works\dsh-workspace\agents-box\EN\`）。
 - 绑定：`dsh.local`（win-dsh → `D:\00_WY\100_Works\dsh-workspace`）、
   `dsh.web.sandbox`（linux-sandbox → `/workspace/dsh-app/persona`）。
 
 ## 常见任务配方
 
-- **改人设内容**：编辑 `../EN/` 五文件 → `validate` → `pack` → `publish` →
+- **改人设内容**：编辑 `D:\00_WY\100_Works\dsh-workspace\agents-box\EN\` 五文件 → `validate` → `pack` → `publish` →
   `reconcile dsh.local` → 提醒用户 `/restart`。
 - **排查 persona 未生效**：`status dsh.local` → prefix.txt 在否/新否 → dump-config
   stderr → 引擎进程启动时间 vs prefix.txt mtime → 最后才怀疑接线本体。
