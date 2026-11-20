@@ -28,6 +28,7 @@ persona-stack/                ← 本仓库 = git registry（seam ②）
 python persona.py validate <源目录>                # lint：清单/锚点注册表同步/按名引用
 python persona.py pack <源目录>                   # → bundles/xiaoxiao/<hash>/，幂等
 python persona.py publish                         # git 提交 + push（不可变发布）
+python persona.py list                            # registry 清单 + 绑定概览
 python persona.py bind <slot> --host file|dsh --target <目录> xiaoxiao[@hash]
 python persona.py status [slot]                   # 漂移报告（exit 0=全收敛, 2=有漂移）
 python persona.py reconcile [slot] [--pull]       # 收敛；漂移默认按 revert 恢复
@@ -36,10 +37,10 @@ python persona.py absorb <slot> --yes             # promote：宿主编辑写回
 ```
 
 `--var KEY=VAL`（bind 时）走渲染层：占位符填充产派生 hash，同源多实例互不干扰。
-实测（renderlab 测试人设）：同 bundle 两实例 `render.a`（Ada/Berlin）/`render.b`
-（Lin/Hangzhou）各自收敛、派生 hash 不同（136672b6…/c2ac89b9…）；改任一实例内容
-→ drifted → reconcile 按源恢复；漏填占位符 → `render-fail`（exit 2，拒绝物化，
-不产出半成品 persona）。占位符词汇表大小写敏感（`{{PERSON_name}}`）。
+实测（renderlab 一次性测试人设，验证后已从注册表删除，证据在提交 22dd80d）：
+同 bundle 两实例（Ada/Berlin / Lin/Hangzhou）各自收敛、派生 hash不同；
+漏填占位符 → `render-fail`（exit 2，拒绝物化，不产出半成品 persona）；
+改实例内容 → drifted → reconcile 按源恢复。占位符词汇表大小写敏感。
 
 ## 漂移策略（宿主侧被改了怎么办）
 
@@ -90,6 +91,5 @@ python persona.py absorb <slot> --yes             # promote：宿主编辑写回
   TOOLS/CONTEXT 正确留在工作区未进提示词；且该证据采集自 ob-garden 工作区——
   persona 接线是 profile 级，覆盖本机全部会话。linux-sandbox 接线（dsh-bridge）
   由远端设备自行验证。
-- ✅ M4 渲染层实测（renderlab 双实例 + 缺填拒绝 + 漂移恢复全过）
-- 🚧 Operit 适配器（M5）、CN 母版五文件拆分入库
-- 🚧 Operit 适配器（M5）
+- ✅ M4 渲染层实测（双实例 + 缺填拒绝 + 漂移恢复全过；测试 fixture 已清理）
+- 🚧 M5 Operit 适配器、CN 母版五文件拆分入库

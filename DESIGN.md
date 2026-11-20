@@ -1,7 +1,10 @@
 # persona 注入工具 · 设计定稿（v1）
 
-- 日期：2026-11-19
-- 状态：设计定稿，取代本目录原 persona-stack 架构（原实现待新实现落地后归档）
+- 日期：2026-11-19（实施状态更新：2026-11-20）
+- 状态：已实施。M1/M2/M4 已验收（含 win-dsh 会话级闭环），M3（OpenClaw 真实接线）/
+  M5（Operit adapter）待做；实施进度以 [README.md](./README.md) 状态节为准。
+- 取代本目录原 persona-stack 架构（原实现已归档 `_archive/`，原需求规格
+  [人设配置工具-需求规格.md](./人设配置工具-需求规格.md) 转为历史资料）
 - 前置：五文件人设集（AGENTS / IDENTITY / SOUL / TOOLS / CONTEXT，以 `agents-box/EN/` 现状为准）
 
 ---
@@ -125,12 +128,13 @@ DSH、OpenClaw、Operit 三个宿主已确定存在且互不相同——这是�
 3. 锚点/槽位改动与注册表同步在同一次提交内完成；
 4. 绑定表变更走 PR，改动可追溯回源 hash。
 
-## 10. 命令面（8 动词）
+## 10. 命令面（9 动词）
 
 ```
 persona validate                     # lint 五文件：schema、锚点注册表、按名交叉引用
 persona pack                         # 算 hash → 不可变 bundle
 persona publish                       # 写入 registry（git commit+push）
+persona list                          # registry 清单 + 绑定概览
 persona bind <slot> <persona@hash>    # 声明应然
 persona status                        # 全宿主漂移报告
 persona reconcile                     # 收敛（DSH 开机钩子调的也是它）
@@ -140,14 +144,19 @@ persona absorb <slot>                # promote 路径：宿主编辑 → 新版�
 
 ## 11. 里程碑
 
-| 期 | 内容 | 验收 |
-|---|---|---|
-| M1 | validate + pack + git registry | 五文件 → bundle 落库，hash 稳定可复算 |
-| M2 | DSH adapter + reconcile + 开机钩子 | prefix 注入 + readback 对账回执 + 断网 fail-open |
-| M3 | OpenClaw adapter | 三文件落位 + 宿主自有内容无损 + uninstall 还原 |
-| M4 | 渲染层 | 同源两填充，两派生 hash，各自绑定收敛 |
-| M5 | Operit adapter | 卡片往返 encode/decode 对账 |
-| 收尾 | 旧 persona-stack 归档 `_archive/`，本仓库切换为新实现 | verify 脚本全绿 |
+| 期 | 内容 | 验收 | 状态（2026-11-20） |
+|---|---|---|---|
+| M1 | validate + pack + git registry | 五文件 → bundle 落库，hash 稳定可复算 | ✅ EN 集 v1.0.0 入库 |
+| M2 | DSH adapter + reconcile + 开机钩子 | prefix 注入 + readback 对账回执 + 断网 fail-open | ✅ win-dsh 会话级闭环（preset-patch 行，seam VII；见 README）；linux-sandbox 待远端自验 |
+| M3 | OpenClaw adapter | 三文件落位 + 宿主自有内容无损 + uninstall 还原 | 🚧 适配器已实现往返，待真实宿主接线 |
+| M4 | 渲染层 | 同源两填充，两派生 hash，各自绑定收敛 | ✅ 实测全过（fixture 已清理，证据 22dd80d） |
+| M5 | Operit adapter | 卡片往返 encode/decode 对账 | 🚧 未开工 |
+| 收尾 | 旧 persona-stack 归档 `_archive/`，本仓库切换为新实现 | verify 脚本全绿 | ✅ |
+
+实施中补的两条设计修正（已并入本文）：DSH 接线最终落在 **preset-patch 接缝**
+（TUI 会话 persona 由 agent 预设供给并遮蔽部署级，§5 原表述只对了预设层一级）；
+渲染层补 **fail-closed 缺填拒绝**（占位符漏填 → `render-fail`，不物化半成品，
+§6 原表述未覆盖该分支）。
 
 ## 12. 与旧架构的取舍账
 
