@@ -499,14 +499,23 @@ def cmd_publish(args) -> int:
         ["add", "-A"],
         ["commit", "-m", msg],
     ):
-        r = subprocess.run(["git", "-C", str(REPO), *cmd], capture_output=True, text=True)
+        r = subprocess.run(
+            ["git", "-C", str(REPO), *cmd], capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+        )
         if r.returncode != 0 and "nothing to commit" not in (r.stdout + r.stderr):
             print(r.stdout.strip())
             print(r.stderr.strip(), file=sys.stderr)
             die(f"publish failed: {' '.join(cmd[:3])}")
-    remotes = subprocess.run(["git", "-C", str(REPO), "remote"], capture_output=True, text=True)
+    remotes = subprocess.run(
+        ["git", "-C", str(REPO), "remote"], capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+    )
     if remotes.stdout.strip():
-        r = subprocess.run(["git", "-C", str(REPO), "push"], capture_output=True, text=True)
+        r = subprocess.run(
+            ["git", "-C", str(REPO), "push"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+        )
         if r.returncode != 0:
             print(f"warn: git push failed — push manually later\n{r.stderr.strip()}")
         else:
