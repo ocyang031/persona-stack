@@ -695,7 +695,13 @@ def cmd_absorb(args) -> int:
     entry = next((b for b in idx["bundles"] if b["hash"] == h), None)
     src = Path(entry["source"]) if entry and entry.get("source") else None
     if src is None or not (src / "persona.yaml").is_file():
-        die("source directory from pack time is unreachable — absorb needs it")
+        # pack-time source moved/deleted (repo migration) — fall back to the
+        # in-repo editing face; copy old bundle there if it is empty/missing.
+        src = SOURCES_DIR / pid
+        if src.is_dir() and (src / "persona.yaml").is_file():
+            print(f"note: pack-time source unreachable, using {src}")
+        else:
+            die(f"source directory unreachable — copy bundle {pid}@{h} into sources/{pid}/ first, then absorb")
     _, files, loads = load_bundle(pid, h)
     adapter = get_adapter(e["host"])
     got = adapter.readback(Path(e["target"]), pid, list(files), loads)
