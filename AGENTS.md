@@ -112,9 +112,11 @@ exit：0=全收敛；2=有漂移/缺件；其余=参数错。
 
 - **改人设内容（正式版）**：编辑 `sources/xiaoxiao/` 五文件 → `publish`
   （自动 validate+hash+快照+提交+推送）→ `reconcile dsh.local` → 提醒用户 `/restart`。
-- **临时人设（不发版）**：编辑 `sources/xiaoxiao/` → `reconcile dsh.local` → `/restart`；
-  不 pack 不 publish，`status` 会显示 drifted（这是「临时版生效中」的提示）。
-  远端设备不受影响（它们只认 bundles）。
+- **临时人设（不发版）**：直接改**落位目录**的 `persona.prefix.txt`（接线读它）→
+  `/restart`。reconcile 读 bundles 快照、不读 sources 草稿——改 sources 不跑
+  publish 是刷不下去的。`status` 报 drifted = 临时版生效中的标记；恢复正式版 =
+  `reconcile`；临时版转正 = `absorb dsh.local --yes`（宿主编辑写回 sources 提案）
+  → `publish`。远端设备不受影响（它们只认 bundles）。
 - **排查 persona 未生效**：`status dsh.local` → prefix.txt 在否/新否 → dump-config
   stderr → 引擎进程启动时间 vs prefix.txt mtime → 最后才怀疑接线本体。
 - **新设备接入**：`clone` → `git config core.hooksPath .githooks`（一次性）→

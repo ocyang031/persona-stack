@@ -10,13 +10,12 @@
 
 **临时改人设（不发版）**：
 
-```
-编辑 sources\xiaoxiao\SOUL.md
-python persona.py reconcile dsh.local
+直接编辑落位文件 `D:\00_WY\100_Works\dsh-workspace\persona.prefix.txt`
 /restart
-```
 
-只有本机生效，远端设备不受影响。
+只有本机生效（reconcile 读的是 bundles 快照，不看 sources 草稿）。`status` 显示
+drifted = 临时版生效中的标记；想恢复正式版跑 `reconcile`；想转正跑
+`absorb dsh.local --yes` 后 `publish`。
 
 **转正**：
 
