@@ -86,6 +86,10 @@ exit：0=全收敛；2=有漂移/缺件；其余=参数错。
 
 ## 当前状态（2026-11-20）
 
+- 仓库已迁至 `D:\00_WY\400_Code\410_Remote\persona-stack`（规划归属地）；EN 人设源
+  目录暂留 `D:\00_WY\100_Works\dsh-workspace\agents-box\EN`（文档引用已改绝对路径，
+  待迁）。
+
 - M1 ✅ registry；M2 ✅ win-dsh 会话级闭环（枭枭生效，/debug-prompt 证据 d13d23f），
   linux-sandbox 待远端自验；M3 🚧 openclaw adapter 已实现，待真实宿主；M4 ✅ 渲染层
   （fixture 已清）；M5 🚧 未开工。
