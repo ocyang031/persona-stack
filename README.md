@@ -78,12 +78,18 @@ python persona.py absorb <slot> --yes             # promote：宿主编辑写回
   validate 已含占位符检查；dsh-persona 的 `suffix` 默认被遮蔽为空，本集用不到
   suffix，无影响。
 
-## 状态（2026-11-19）
+## 状态（2026-11-20）
 
 - ✅ M1 registry（validate/pack/publish/list）—— EN 集 v1.0.0 已入库
 - ✅ reconciler + file/openclaw + dsh 适配器（往返、漂移检测、恢复、回执全过）
 - ✅ 旧架构归档 `_archive/`
-- ✅ M2 真实宿主接线：win-dsh（preset-patch 行，配置层已验证入库）+ linux-sandbox（dsh-bridge，远端）
+- ✅ M2 真实宿主接线 + 会话级验证闭环：win-dsh preset-patch 行（seam VII）——
+  TUI 重启后新会话自报枭枭且否认外部厂商身份；`/debug-prompt` 硬证据：
+  system prompt 中 persona 块 = persona.prefix.txt 全文（含标记，19,976 字节
+  逐字出现于位置 50），stock `coding agent powered by {{model}}` 模板已被遮蔽，
+  TOOLS/CONTEXT 正确留在工作区未进提示词；且该证据采集自 ob-garden 工作区——
+  persona 接线是 profile 级，覆盖本机全部会话。linux-sandbox 接线（dsh-bridge）
+  由远端设备自行验证。
 - ✅ M4 渲染层实测（renderlab 双实例 + 缺填拒绝 + 漂移恢复全过）
-- 🚧 会话级 persona 注入终验（win-dsh：TUI 重启后新会话自报身份 + `/debug-prompt` 取证）
+- 🚧 Operit 适配器（M5）、CN 母版五文件拆分入库
 - 🚧 Operit 适配器（M5）
