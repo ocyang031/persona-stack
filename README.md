@@ -56,8 +56,9 @@ python persona.py absorb <slot> --yes             # promote：宿主编辑写回
 - **file / openclaw**：每文件托管块信封（`<!-- persona:id@hash BEGIN/END -->`），
   块外内容归宿主，uninstall 摘块还原。
 - **dsh**：prefix 文件（always-on + session-start）拼成单一 `persona.prefix.txt`
-  （自描述文件标记），on-demand 文件随目录平铺。接线按设备分两种，并存于注册表，
-  按 slot/device 区分：
+  （自描述文件标记），on-demand 文件随目录平铺。**适配器层只有一个 `host: dsh`**
+  （`DshAdapter` 在 persona.py，管磁盘契约与信封往返）——TUI 与 web 产品消费同一
+  产物形态，不做 dsh / dsh-tui 之分；产品差异在**接线层**，由 slot/device 表达：
 
   - **win-dsh（本机 TUI）**：profile `cordis.patch.yml` 的 **preset-patch 行
     （seam VII）**——替换 standard 预设里 persona 行的 `prefix` 配置为「配置加载时
@@ -66,7 +67,11 @@ python persona.py absorb <slot> --yes             # promote：宿主编辑写回
     打在部署级、被预设遮蔽未生效，已修正到预设层）。preset 内行不受 id 定位补丁
     影响，必须用 preset-patch 接缝；行本身须为 `insert` 形式。
   - **linux-sandbox（dsh web 产品）**：`dsh-bridge.py` 将 prefix.txt 编译为
-    `--patch` overlay（自校验往返）。
+    `--patch` overlay（自校验往返）。注意它是**设备接线胶水，非适配器**——
+    硬编码该机路径，编译期内联（每启动重编等效保鲜；改 prefix 后须重跑）。
+  - 两种接线的新鲜度模型不同：win-dsh 配置加载时读文件（永不过期），bridge
+    编译期内联（重编才保鲜）。第三台设备接入规则：优先「加载时读产物」的
+    产品原生接缝，没有再用 bridge。
 
   宿主机开机自拉（start.sh / 启动参数）：
 
