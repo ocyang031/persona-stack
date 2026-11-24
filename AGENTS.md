@@ -23,7 +23,7 @@ clone 即全量副本）**；`sources/<id>/` 是编辑现场（在仓库内、�
 | `sources/<id>/` | 人设编辑现场（人设文件集 + persona.yaml，随 clone 分发，自由编辑） | 可编辑；晋升走 publish |
 | `verify.py` | bundles 完整性闸门（重算全部 bundle hash + index/绑定对账） | 可改；commit 前必须绿 |
 | `.githooks/pre-commit` | 提交闸门：跑 verify.py，bundles 被偷改则拒绝提交 | 启用方式：`git config core.hooksPath .githooks`（clone 后需一次性设置） |
-| `bindings.json` | 绑定表（宿主应然状态） | 可改；schema：slot/persona/hash/host/target/vars/pin/device/bound_at（+ 可选 `include`：该槽位的文件白名单，缺省用 adapter 的 `wants`） |
+| `bindings.json` | 绑定表（宿主应然状态） | 可改；schema：slot/persona/hash/host/target/vars/pin/device/bound_at（+ 可选 `include`：该槽位的文件白名单，缺省用 adapter 的 `wants`）。`unbind` 摘掉宿主块后会连条目一起删 |
 | `bundles/<id>/<hash>/` | 不可变快照 | **只增不改不删**（纪律 1） |
 | `receipts/` | 回执流 | 只追加；gitignore |
 | `dsh-bridge.py` | linux-sandbox 设备接线胶水（**非适配器**，硬编码该机路径） | 原则上不改 |

@@ -35,6 +35,7 @@
 | `revert <slot>` | 回滚：绑定指回上一版本并刷新 |
 | `list` | 查看注册表里有哪些 persona、各版本、绑定概览 |
 | `bind <slot> --host dsh --target <目录> <persona>` | 新宿主接入：声明「这个槽位用哪个人设的哪个版本」。可加 `--var KEY=VAL`（占位符填充）、`--device <标识>`（多机区分）、`--pin`（豁免对账） |
+| `unbind <slot> --yes` | 卸载：从宿主摘掉人设块（块外内容不动）并删除该绑定；输出里给出恢复命令 |
 | `absorb <slot> --yes` | 晋升：把宿主落位上的编辑写回 sources 作为新版本提案 |
 
 ### 新机器接入（一次性）
