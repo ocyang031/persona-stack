@@ -21,6 +21,17 @@
       "pin": false,
       "device": "win-dsh",
       "bound_at": "2026-11-20T06:45:41+00:00"
+    },
+    {
+      "slot": "codex.global",
+      "persona": "xiaoxiao",
+      "hash": "70cf8591502a3d3d",
+      "host": "codex",
+      "target": "D:\\00_WY\\300_Dev\\.codex\\AGENTS.md",
+      "vars": {},
+      "pin": false,
+      "device": "win-dsh",
+      "bound_at": "2026-11-24T03:33:27+00:00"
     }
   ]
 }
