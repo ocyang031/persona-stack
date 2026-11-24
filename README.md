@@ -1,6 +1,6 @@
 # persona-stack
 
-人设注入工具：人设文件集（AGENTS / IDENTITY / SOUL / DISCIPLINE / TOOLS / CONTEXT）→ 不可变快照 → 多宿主收敛。
+人设注入工具：人设文件集（AGENTS / IDENTITY / SOUL / TOOLS / CONTEXT）→ 不可变快照 → 多宿主收敛。
 
 **权威版本在 GitHub**：`git@github.com:ocyang031/persona-stack.git`。仓库里的 `bundles/` 是人设的不可变版本库，`sources/` 是编辑现场，clone 一次全拿到。
 

@@ -25,13 +25,13 @@
     {
       "slot": "codex.global",
       "persona": "xiaoxiao",
-      "hash": "8965388f299c5f2b",
+      "hash": "b08ee5f92df2eaed",
       "host": "codex",
       "target": "D:\\00_WY\\300_Dev\\.codex\\AGENTS.md",
       "vars": {},
       "pin": false,
       "device": "win-dsh",
-      "bound_at": "2026-11-24T03:48:11+00:00"
+      "bound_at": "2026-11-24T03:59:57+00:00"
     }
   ]
 }

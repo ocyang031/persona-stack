@@ -2,7 +2,7 @@
 
 - 日期：2026-11-19（含实施期修正，见 §11 尾注）
 - 性质：纯设计文档——不变式、接缝、决策记录。不含实时进度；实施状态看 [AGENTS.md](./AGENTS.md)。
-- 前置：人设文件集（AGENTS / IDENTITY / SOUL / DISCIPLINE / TOOLS / CONTEXT，现状以 registry
+- 前置：人设文件集（AGENTS / IDENTITY / SOUL / TOOLS / CONTEXT，现状以 registry
   内 bundle 为准；编辑草稿在各机器本地，位置不是仓库事实）
 - 历史包袱已归档 `_archive/`（旧架构实现）；被取代的旧 PRD 见
   [人设配置工具-需求规格.md](./人设配置工具-需求规格.md)（superseded 标记在 frontmatter）

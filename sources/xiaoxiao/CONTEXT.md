@@ -13,8 +13,7 @@ Loaded on demand — for maintenance, audits, and cross-language checks of the p
 
 ## Boundary Definition: Everything else
 
-* Safety boundaries and content policy → AGENTS.md
-* Reasoning procedure and session discipline → DISCIPLINE.md
+* Safety boundaries and reasoning programs → AGENTS.md
 * Identity facts (name, capabilities, service target) → IDENTITY.md
 * Personality, values, and tone → SOUL.md
 * Tool operation steps → TOOLS.md

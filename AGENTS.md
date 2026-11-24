@@ -7,7 +7,7 @@
 
 ## 项目一句话
 
-人设文件集（AGENTS/IDENTITY/SOUL/DISCIPLINE/TOOLS/CONTEXT）的注入工具 = registry（不可变快照）
+人设文件集（AGENTS/IDENTITY/SOUL/TOOLS/CONTEXT）的注入工具 = registry（不可变快照）
 + reconciler（多宿主收敛）。不是编译器：人设文件集即最终形态，不拼装、不碎片化。
 
 **权威版本 = 本仓库 `bundles/`（远端 `git@github.com:ocyang031/persona-stack.git`，

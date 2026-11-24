@@ -1,5 +1,5 @@
 id: xiaoxiao
-version: 1.2.1
+version: 1.3.0
 language: en
 files:
   - name: AGENTS.md
@@ -8,11 +8,9 @@ files:
     load: session-start
   - name: SOUL.md
     load: session-start
-  - name: DISCIPLINE.md
-    load: always-on
   - name: TOOLS.md
     load: on-demand
   - name: CONTEXT.md
     load: on-demand
 placeholders: []
-notes: EN persona set, split from muse-ai-AGENTS_EN.md 2026-11-19; AGENTS §5-7 split out to DISCIPLINE.md in 1.2.0 so single-file hosts can take the discipline half
+notes: EN persona set, split from muse-ai-AGENTS_EN.md 2026-11-19; 1.2.x split §5-7 into DISCIPLINE.md and 1.3.0 reverts it — §5 operates on the §3 prohibitions and cannot be cut away from them, so the policy half stays whole

@@ -20,7 +20,7 @@ class CodexAdapter:
     to mount and are dropped rather than pasted in permanently."""
     name = "codex"
     target_kind = "file"
-    wants = ("IDENTITY.md", "SOUL.md", "DISCIPLINE.md")
+    wants = ("IDENTITY.md", "SOUL.md")
 
     @staticmethod
     def place(target: Path, pid: str, h: str, files: dict, loads: dict) -> None:
