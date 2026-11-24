@@ -157,6 +157,33 @@ def cmd_bind(args) -> int:
     return 0
 
 
+def cmd_unbind(args) -> int:
+    data = load_bindings()
+    e = find_binding(data, args.slot)
+    if e is None:
+        die(f"no binding for slot {args.slot!r}")
+    if not args.yes:
+        die(f"unbind strips the persona block from {e['target']} and drops the binding "
+            f"— re-run with --yes")
+    pid, h = e["persona"], e["hash"]
+    files: dict = {}
+    loads: dict = {}
+    if (BUNDLES_DIR / pid / h).is_dir():
+        _, files, loads = load_bundle(pid, h)
+    else:
+        print(f"warn: bundle {pid}@{h} not in local registry — "
+              f"removing the block without a file list")
+    adapter = get_adapter(e["host"])
+    for note in adapter.remove(Path(e["target"]), pid, files, loads):
+        print(f"  note: {note}")
+    data["bindings"].remove(e)
+    save_bindings(data)
+    print(f"unbind: {args.slot} → {e['target']}")
+    print(f"  restore: python persona.py bind {args.slot} --host {e['host']} "
+          f"--target \"{e['target']}\" {pid}@{h}")
+    return 0
+
+
 def _slot_entries(data: dict, slot: "str | None", device: "str | None" = None):
     if slot:
         e = find_binding(data, slot)

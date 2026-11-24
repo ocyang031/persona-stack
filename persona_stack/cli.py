@@ -13,6 +13,7 @@ from .commands import (
     cmd_reconcile,
     cmd_revert,
     cmd_status,
+    cmd_unbind,
     cmd_validate,
 )
 
@@ -43,6 +44,11 @@ def main() -> int:
     p.add_argument("--pin", action="store_true", help="exempt this slot from reconcile")
     p.add_argument("--device", default="", help="wiring identity tag (per-device, e.g. linux-sandbox / win-dsh)")
     p.set_defaults(fn=cmd_bind)
+
+    p = sub.add_parser("unbind", help="strip a slot's host placement and drop the binding")
+    p.add_argument("slot")
+    p.add_argument("--yes", action="store_true", help="confirm removing the host-side block")
+    p.set_defaults(fn=cmd_unbind)
 
     p = sub.add_parser("status", help="report drift for all/one binding(s)")
     p.add_argument("slot", nargs="?")
