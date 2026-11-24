@@ -2,7 +2,7 @@
 
 - 日期：2026-11-19（含实施期修正，见 §11 尾注）
 - 性质：纯设计文档——不变式、接缝、决策记录。不含实时进度；实施状态看 [AGENTS.md](./AGENTS.md)。
-- 前置：五文件人设集（AGENTS / IDENTITY / SOUL / TOOLS / CONTEXT，现状以 registry
+- 前置：人设文件集（AGENTS / IDENTITY / SOUL / DISCIPLINE / TOOLS / CONTEXT，现状以 registry
   内 bundle 为准；编辑草稿在各机器本地，位置不是仓库事实）
 - 历史包袱已归档 `_archive/`（旧架构实现）；被取代的旧 PRD 见
   [人设配置工具-需求规格.md](./人设配置工具-需求规格.md)（superseded 标记在 frontmatter）
@@ -12,18 +12,18 @@
 ## 0. 一句话定位
 
 **这不是编译器，是一台"注册表 + 收敛器"。**
-五文件本身就是最终形态，不需要拼装、碎片化、再缝回。工具只做两件事：
+人设文件集本身就是最终形态，不需要拼装、碎片化、再缝回。工具只做两件事：
 
-1. **Registry** —— 把五文件变成不可变的版本化快照（bundle）；
+1. **Registry** —— 把人设文件集变成不可变的版本化快照（bundle）；
 2. **Reconciler** —— 让任意多台宿主机上的副本与快照保持收敛，并把差异报告出来。
 
-编译阶段整个消失。宿主之间的真实差异是"加载机制"的差异，不是"内容"的差异；五文件的切分恰好按加载时机切，它就是为分布而生的粒度。人读的、agent 读的、机器校验的，是同一份东西。
+编译阶段整个消失。宿主之间的真实差异是"加载机制"的差异，不是"内容"的差异；人设文件集的切分恰好按加载时机切，它就是为分布而生的粒度。人读的、agent 读的、机器校验的，是同一份东西。
 
 ## 1. 四条不变式（宪法）
 
 | # | 不变式 | 内容 |
 |---|---|---|
-| I1 | 内容不变式 | 五文件内容宿主无关。任意宿主上 `decode(readback)` 与 bundle 逐字节相等（按 hash 判等）。 |
+| I1 | 内容不变式 | 人设文件集内容宿主无关。任意宿主上 `decode(readback)` 与 bundle 逐字节相等（按 hash 判等）。 |
 | I2 | 事实源唯一式 | 内容只在源仓库被编辑；宿主侧永远是副本。宿主上的编辑不是事实，是漂移（或待晋升提案，见 §7）。 |
 | I3 | 不可变发布式 | bundle 一经发布不可改写；任何改动 = 新版本、新 hash。回滚 = 绑定指回旧 hash。 |
 | I4 | 声明式收敛式 | 部署状态由两张表描述：绑定表（host.slot → persona@hash）与回执流。工具职责 = 让应然与实然收敛，并报告差异。 |
@@ -42,7 +42,7 @@ I3 顺手消灭一类经典漂移："改已部署产物"在不可变模型里没
 ## 3. 组件与数据流
 
 ```
-五文件 + persona.yaml(清单)
+人设文件集 + persona.yaml(清单)
         │ validate → pack: 算内容 hash → 不可变 bundle
         ▼
 ┌─ Registry（git bundles/，不可变）──┐   ← 接缝②：git / 目录 / HTTP 可插
@@ -80,13 +80,13 @@ I3 顺手消灭一类经典漂移："改已部署产物"在不可变模型里没
 | ② Registry Backend | 存储位置 | 一个 backend 实现 |
 | ③ Trigger | 收敛时机 | 调 `reconcile()` 的另一种方式（手动/开机钩子/未来 cron） |
 
-DSH、OpenClaw、Operit 三个宿主已确定存在且互不相同——这是三个现役 adapter 证明过的真缝，不是假想接缝。内容层扩展位：清单可声明五文件之外的 advisory 文件（如本 DESIGN），标"按需、允许宿主不物化"；文件集 schema 本身版本化。
+DSH、OpenClaw、Operit 三个宿主已确定存在且互不相同——这是三个现役 adapter 证明过的真缝，不是假想接缝。内容层扩展位：清单可声明人设文件集之外的 advisory 文件（如本 DESIGN），标"按需、允许宿主不物化"；文件集 schema 本身版本化。
 
 ## 5. 各宿主 adapter 契约
 
 | 宿主 | encode | load hint 翻译 | 触发 |
 |---|---|---|---|
-| DSH | 五文件按清单序拼成单一 prefix，文件间插自描述标记 `<!-- persona:file X.md -->`，decode 按标记切回五段 | always-on = 进 prefix；on-demand = 不进 prefix、留在工作区 | 开机自拉（start.sh 起动前 reconcile） |
+| DSH | 人设文件集按清单序拼成单一 prefix，文件间插自描述标记 `<!-- persona:file X.md -->`，decode 按标记切回各段 | always-on = 进 prefix；on-demand = 不进 prefix、留在工作区 | 开机自拉（start.sh 起动前 reconcile） |
 | OpenClaw | 逐文件 managed-block 信封（BEGIN/END 标记），decode 按信封剥壳；区块外内容归宿主 | always-on 三文件；on-demand 留工作区 | 手动（未来可挂 session-start） |
 | Operit | 卡片 JSON 字段映射（encode/decode 按字段 schema 往返） | 卡片即常驻；CONTEXT 之类塞进卡片附注区 | 刷卡时手动 |
 
@@ -94,7 +94,7 @@ DSH、OpenClaw、Operit 三个宿主已确定存在且互不相同——这是�
 
 ## 6. 渲染层（v1 进）：多实例语义
 
-**多实例 = 同一份 SOUL，多个身体。** 灵魂只有一份；变的是名牌（名字、称呼、id 等占位符的填充值）。多 soul 是另一回事：那叫多 persona，= registry 里另一套五文件目录、另一行绑定，从来不需要渲染层。
+**多实例 = 同一份 SOUL，多个身体。** 灵魂只有一份；变的是名牌（名字、称呼、id 等占位符的填充值）。多 soul 是另一回事：那叫多 persona，= registry 里另一套人设文件集目录、另一行绑定，从来不需要渲染层。
 
 ```
 源 bundle（字面量纯净，含 {{PERSON_NAME}} 等占位符）
@@ -131,7 +131,7 @@ DSH、OpenClaw、Operit 三个宿主已确定存在且互不相同——这是�
 ## 10. 命令面（9 动词）
 
 ```
-persona validate                     # lint 五文件：schema、锚点注册表、按名交叉引用
+persona validate                     # lint 人设文件集：schema、锚点注册表、按名交叉引用
 persona pack                         # 算 hash → 不可变 bundle
 persona publish                       # 写入 registry（git commit+push）
 persona list                          # registry 清单 + 绑定概览
@@ -146,7 +146,7 @@ persona absorb <slot>                # promote 路径：宿主编辑 → 新版�
 
 | 期 | 内容 | 验收 |
 |---|---|---|
-| M1 | validate + pack + git registry | 五文件 → bundle 落库，hash 稳定可复算 |
+| M1 | validate + pack + git registry | 人设文件集 → bundle 落库，hash 稳定可复算 |
 | M2 | DSH adapter + reconcile + 开机钩子 | prefix 注入 + readback 对账回执 + 断网 fail-open |
 | M3 | OpenClaw adapter | 三文件落位 + 宿主自有内容无损 + uninstall 还原 |
 | M4 | 渲染层 | 同源两填充，两派生 hash，各自绑定收敛 |
@@ -164,7 +164,7 @@ persona absorb <slot>                # promote 路径：宿主编辑 → 新版�
 
 | 旧 persona-stack | 新设计 | 判词 |
 |---|---|---|
-| 源碎成 identity/soul/contract/domain + 编译拼装 | 五文件即源，零编译 | 扔：源形态≠宿主形态的翻译层是自找的 |
+| 源碎成 identity/soul/contract/domain + 编译拼装 | 人设文件集即源，零编译 | 扔：源形态≠宿主形态的翻译层是自找的 |
 | SOURCE_DIRNAME 硬编码，一机一 persona | 绑定表数据化 | 扔：多 persona 多宿主的最大闸门 |
 | 指纹行写进正文首行 | provenance 外置 | 扔：内容被污染，逐字节可比性报废 |
 | install 时一次性 verify | readback 对账 + 按触发收敛 | 扔：漂移只在安装瞬间可见 |

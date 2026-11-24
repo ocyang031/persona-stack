@@ -45,7 +45,7 @@ def cmd_pack(args) -> int:
     if errors:
         for e in errors:
             print(f"error: {e}")
-        die("pack: source failed validation; fix the five files first")
+        die("pack: source failed validation; fix the source files first")
     pid = m["id"]
     plain = [(name, content) for name, _, content in files]
     h = canonical_hash(manifest_bytes, plain)

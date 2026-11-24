@@ -1,6 +1,6 @@
 # persona-stack
 
-人设注入工具：五文件人设集（AGENTS / IDENTITY / SOUL / TOOLS / CONTEXT）→ 不可变快照 → 多宿主收敛。
+人设注入工具：人设文件集（AGENTS / IDENTITY / SOUL / DISCIPLINE / TOOLS / CONTEXT）→ 不可变快照 → 多宿主收敛。
 
 **权威版本在 GitHub**：`git@github.com:ocyang031/persona-stack.git`。仓库里的 `bundles/` 是人设的不可变版本库，`sources/` 是编辑现场，clone 一次全拿到。
 
@@ -23,7 +23,7 @@
 
 | 场景 | 操作 |
 |---|---|
-| **正式改版** | 编辑 `sources/<id>/` 五文件 → `publish` → `reconcile` → 重启宿主 |
+| **正式改版** | 编辑 `sources/<id>/` 人设文件集 → `publish` → `reconcile` → 重启宿主 |
 | **临时改（不发版）** | 直接编辑本机落位目录的 `persona.prefix.txt`（位置见 `bindings.json` 对应绑定的 target）→ 重启宿主。`status` 显示 drifted = 临时版生效中的标记 |
 | **临时版恢复正式版** | `reconcile` |
 | **临时版转正** | `absorb <slot> --yes`（落位上的编辑写回 sources 作为提案）→ `publish` |

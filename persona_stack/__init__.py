@@ -1,6 +1,6 @@
-"""persona — registry + reconciler for the five-file persona set.
+"""persona — registry + reconciler for the persona file set.
 
-Implements DESIGN.md v1: the five files ARE the final form. This tool never
+Implements DESIGN.md v1: the persona files ARE the final form. This tool never
 compiles or reshapes them. It snapshots them into an immutable, content-hashed
 bundle directory (the registry), records desired state in bindings.json, and
 converges host-side copies to it (the reconciler), reporting drift.

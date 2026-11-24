@@ -18,10 +18,10 @@ from .commands import (
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(prog="persona", description="five-file persona registry + reconciler")
+    ap = argparse.ArgumentParser(prog="persona", description="persona file-set registry + reconciler")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("validate", help="lint the source five-file set")
+    p = sub.add_parser("validate", help="lint the source persona file set")
     p.add_argument("source")
     p.set_defaults(fn=cmd_validate)
 

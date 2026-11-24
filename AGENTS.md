@@ -2,13 +2,13 @@
 
 > 给在本仓库工作的 agent：读完本文件即可上手开发。分工固定——AGENTS.md=机读操作、
 > README.md=人读用法、DESIGN.md=人读设计理由。注意命名碰撞：本文件是**仓库操作手册**，
-> 不是人设内容；人设五文件在 `sources/<id>/`（那边也有 AGENTS.md，是注入宿主的
+> 不是人设内容；人设文件集在 `sources/<id>/`（那边也有 AGENTS.md，是注入宿主的
 > persona 文件）。
 
 ## 项目一句话
 
-五文件人设集（AGENTS/IDENTITY/SOUL/TOOLS/CONTEXT）的注入工具 = registry（不可变快照）
-+ reconciler（多宿主收敛）。不是编译器：五文件即最终形态，不拼装、不碎片化。
+人设文件集（AGENTS/IDENTITY/SOUL/DISCIPLINE/TOOLS/CONTEXT）的注入工具 = registry（不可变快照）
++ reconciler（多宿主收敛）。不是编译器：人设文件集即最终形态，不拼装、不碎片化。
 
 **权威版本 = 本仓库 `bundles/`（远端 `git@github.com:ocyang031/persona-stack.git`，
 clone 即全量副本）**；`sources/<id>/` 是编辑现场（在仓库内、随 clone 分发），
@@ -20,7 +20,7 @@ clone 即全量副本）**；`sources/<id>/` 是编辑现场（在仓库内、�
 |---|---|---|
 | `persona.py` | 入口壳（~20 行）：re-export + `main()`；实现已迁到 `persona_stack/` | 可改；改后 `python -m py_compile persona.py` 必过 |
 | `persona_stack/` | 实现：`paths`/`util` · `manifest` · `registry`（hash+bundle+render） · `state`（bindings+receipts） · `adapters/`（每宿主一文件） · `commands`（十动词） · `cli`（argparse） | 可改；**加宿主 = 新建 `adapters/<host>.py` + 一行 `register()`** |
-| `sources/<id>/` | 人设编辑现场（五文件 + persona.yaml，随 clone 分发，自由编辑） | 可编辑；晋升走 publish |
+| `sources/<id>/` | 人设编辑现场（人设文件集 + persona.yaml，随 clone 分发，自由编辑） | 可编辑；晋升走 publish |
 | `verify.py` | bundles 完整性闸门（重算全部 bundle hash + index/绑定对账） | 可改；commit 前必须绿 |
 | `.githooks/pre-commit` | 提交闸门：跑 verify.py，bundles 被偷改则拒绝提交 | 启用方式：`git config core.hooksPath .githooks`（clone 后需一次性设置） |
 | `bindings.json` | 绑定表（宿主应然状态） | 可改；schema：slot/persona/hash/host/target/vars/pin/device/bound_at（+ 可选 `include`：该槽位的文件白名单，缺省用 adapter 的 `wants`） |
@@ -118,7 +118,7 @@ exit：0=全收敛；2=有漂移/缺件；其余=参数错。
 
 ## 常见任务配方
 
-- **改人设内容（正式版）**：编辑 `sources/xiaoxiao/` 五文件 → `publish`
+- **改人设内容（正式版）**：编辑 `sources/xiaoxiao/` 人设文件集 → `publish`
   （自动 validate+hash+快照+提交+推送）→ `reconcile dsh.local` → 提醒用户 `/restart`。
 - **临时人设（不发版）**：直接改**落位目录**的 `persona.prefix.txt`（接线读它）→
   `/restart`。reconcile 读 bundles 快照、不读 sources 草稿——改 sources 不跑
