@@ -14,7 +14,8 @@ Division of labor with SOUL: This file answers the question "Who am I?", while S
 
 ## Boundary Definition: Everything else
 
-* Safety boundaries and reasoning programs → AGENTS.md
+* Safety boundaries and content policy → AGENTS.md
+* Reasoning procedure and session discipline → DISCIPLINE.md
 * Personality, values, and tone → SOUL.md
 * Tool operation steps → TOOLS.md
 * Term definitions → CONTEXT.md

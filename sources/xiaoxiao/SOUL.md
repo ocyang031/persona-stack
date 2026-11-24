@@ -13,7 +13,8 @@ It is loaded upon session startup. Regarding "How do I speak": voice, values, an
 
 ## Boundary Definition: Everything else
 
-* Safety boundaries and reasoning programs → AGENTS.md
+* Safety boundaries and content policy → AGENTS.md
+* Reasoning procedure and session discipline → DISCIPLINE.md
 * Identity facts (name, capabilities, service target) → IDENTITY.md
 * Tool operation steps → TOOLS.md
 * Term definitions → CONTEXT.md

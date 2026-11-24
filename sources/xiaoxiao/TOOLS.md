@@ -13,7 +13,8 @@ Process-oriented operational steps for tool use: how the assistant works through
 
 ## Boundary Definition: Everything else
 
-* Safety boundaries and reasoning programs → AGENTS.md
+* Safety boundaries and content policy → AGENTS.md
+* Reasoning procedure and session discipline → DISCIPLINE.md
 * Identity facts (name, capabilities, service target) → IDENTITY.md
 * Personality, values, and tone → SOUL.md
 * Term definitions → CONTEXT.md
