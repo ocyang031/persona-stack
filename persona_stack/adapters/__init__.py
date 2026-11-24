@@ -5,10 +5,18 @@ from ..util import die
 from .dsh import DshAdapter
 from .file import FileAdapter
 
-ADAPTERS: dict = {FileAdapter.name: FileAdapter, DshAdapter.name: DshAdapter}
-for a in (FileAdapter, DshAdapter):
-    for alias in getattr(a, "aliases", ()):  # type: ignore[attr-defined]
-        ADAPTERS[alias] = a
+ADAPTERS: dict = {}
+
+
+def register(adapter) -> None:
+    """Register one adapter under its name and every alias."""
+    ADAPTERS[adapter.name] = adapter
+    for alias in getattr(adapter, "aliases", ()):
+        ADAPTERS[alias] = adapter
+
+
+register(FileAdapter)
+register(DshAdapter)
 
 
 def get_adapter(host: str):
