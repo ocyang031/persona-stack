@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from ..util import die
+from .base import Adapter
 from .dsh import DshAdapter
 from .file import FileAdapter
 
 ADAPTERS: dict = {}
 
 
-def register(adapter) -> None:
+def register(adapter: "type[Adapter]") -> None:
     """Register one adapter under its name and every alias."""
     ADAPTERS[adapter.name] = adapter
     for alias in getattr(adapter, "aliases", ()):
@@ -19,7 +20,7 @@ register(FileAdapter)
 register(DshAdapter)
 
 
-def get_adapter(host: str):
+def get_adapter(host: str) -> "type[Adapter]":
     if host not in ADAPTERS:
         die(f"unknown host adapter {host!r} (have: {', '.join(sorted(ADAPTERS))})")
     return ADAPTERS[host]

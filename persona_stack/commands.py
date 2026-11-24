@@ -123,6 +123,14 @@ def cmd_bind(args) -> int:
     for kv in args.var or []:
         k, _, v = kv.partition("=")
         variables[k] = v
+    adapter = get_adapter(args.host)
+    target = Path(args.target).resolve()
+    if target.exists():
+        if adapter.target_kind == "file" and target.is_dir():
+            die(f"host {args.host!r} places one file; target is a directory: {target}")
+        if adapter.target_kind == "dir" and target.is_file():
+            die(f"host {args.host!r} places files into a directory; target is a file: {target}")
+    include = [s.strip() for s in (getattr(args, "include", "") or "").split(",") if s.strip()]
     data = load_bindings()
     entry = find_binding(data, args.slot)
     if entry is None:
@@ -132,12 +140,16 @@ def cmd_bind(args) -> int:
         persona=pid,
         hash=h,
         host=args.host,
-        target=str(Path(args.target).resolve()),
+        target=str(target),
         vars=variables,
         pin=bool(args.pin),
         device=getattr(args, "device", None) or "",
         bound_at=now_iso(),
     )
+    if include:
+        entry["include"] = include
+    else:
+        entry.pop("include", None)
     save_bindings(data)
     print(f"bind: {args.slot} → {pid}@{h} (host={args.host}, target={entry['target']}"
           + (f", device={entry['device']}" if entry["device"] else "")
@@ -157,6 +169,14 @@ def _slot_entries(data: dict, slot: "str | None", device: "str | None" = None):
     return entries
 
 
+def _selected(e: dict, adapter, files: dict) -> dict:
+    """Files this slot actually places: binding include > adapter wants > all."""
+    keep = e.get("include") or list(adapter.wants or ())
+    if not keep:
+        return files
+    return {n: c for n, c in files.items() if n in keep}
+
+
 def _check(e: dict):
     """One binding → (state, detail). Loads bundle, renders, readbacks, compares."""
     pid, h = e["persona"], e["hash"]
@@ -164,12 +184,13 @@ def _check(e: dict):
     if not bdir.is_dir():
         return "missing-bundle", f"{pid}@{h} not in local registry — pack or pull"
     manifest_bytes, files, loads = load_bundle(pid, h)
+    adapter = get_adapter(e["host"])
+    files = _selected(e, adapter, files)
     try:
         rendered = render_files(files, e.get("vars") or {})
     except KeyError as exc:
         return "render-fail", f"{exc}"
     dh = derived_hash(manifest_bytes, rendered)
-    adapter = get_adapter(e["host"])
     got = adapter.readback(Path(e["target"]), pid, list(files), loads)
     if got is None or not got:
         return "not-placed", "host target empty or absent — run reconcile"
@@ -228,6 +249,8 @@ def cmd_reconcile(args) -> int:
             failed += 1
             continue
         manifest_bytes, files, loads = load_bundle(pid, h)
+        adapter = get_adapter(e["host"])
+        files = _selected(e, adapter, files)
         try:
             rendered = render_files(files, e.get("vars") or {})
         except KeyError as exc:
@@ -236,7 +259,6 @@ def cmd_reconcile(args) -> int:
             failed += 1
             continue
         dh = derived_hash(manifest_bytes, rendered)
-        adapter = get_adapter(e["host"])
         try:
             adapter.place(Path(e["target"]), pid, dh, rendered, loads)
         except Exception as exc:  # noqa: BLE001
@@ -294,6 +316,7 @@ def cmd_absorb(args) -> int:
             die(f"source directory unreachable — copy bundle {pid}@{h} into sources/{pid}/ first, then absorb")
     _, files, loads = load_bundle(pid, h)
     adapter = get_adapter(e["host"])
+    files = _selected(e, adapter, files)
     got = adapter.readback(Path(e["target"]), pid, list(files), loads)
     if not got:
         die("nothing readable on host side")

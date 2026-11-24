@@ -25,6 +25,8 @@ class DshAdapter:
     is concatenated into one self-describing prefix artifact; on-demand files
     are delivered as plain workspace copies the agent reaches by pointer."""
     name = "dsh"
+    target_kind = "dir"
+    wants = None
     PREFIX = "persona.prefix.txt"
     IN_PREFIX = DSH_PREFIX_LOADS
 

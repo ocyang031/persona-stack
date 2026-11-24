@@ -10,6 +10,32 @@ carry its own content too:
 from __future__ import annotations
 
 import re
+from pathlib import Path
+from typing import Literal, Protocol
+
+
+class Adapter(Protocol):
+    """The seam every host adapter implements.
+
+    target_kind  — "dir" places many files into a directory; "file" places one
+                   artifact at a path the host already owns. Checked at bind.
+    wants        — file whitelist this host should receive; None = every file
+                   the manifest declares (the load hints decide placement).
+    """
+    name: str
+    aliases: tuple[str, ...]
+    target_kind: Literal["dir", "file"]
+    wants: "tuple[str, ...] | None"
+
+    @staticmethod
+    def place(target: Path, pid: str, h: str, files: dict, loads: dict) -> None: ...
+
+    @staticmethod
+    def readback(target: Path, pid: str, names: list, loads: dict) -> "dict[str, bytes] | None": ...
+
+    @staticmethod
+    def remove(target: Path, pid: str) -> None: ...
+
 
 
 def block_regex(pid: str) -> "re.Pattern[bytes]":

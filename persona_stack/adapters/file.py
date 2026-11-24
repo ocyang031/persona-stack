@@ -13,6 +13,8 @@ class FileAdapter:
     trips) so the host file lands byte-exact to the bundle content."""
     name = "file"
     aliases = ("openclaw",)
+    target_kind = "dir"
+    wants = None
 
     @staticmethod
     def place(target: Path, pid: str, h: str, files: dict, loads: dict) -> None:
