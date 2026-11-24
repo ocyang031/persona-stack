@@ -25,6 +25,7 @@ SPEC = ROOT / 'PROBES.md'
 MODEL = 'home-magpie/meoo/deepseek-v4.1-flash-1017'
 ROUTE = ('magpie', MODEL, 'low')
 ARMS = {'bare': None, 'minimal': 'aed40828ab97718e', 'full': 'b08ee5f92df2eaed'}
+# OFFLINE_ONLY = {'P01', 'P04'}
 PROFILE_FILES = ('package.json', 'cordis.yml', 'cordis.patch.yml', 'pnpm-workspace.yaml')
 STOCK = 'You are a coding agent powered by the {{model}} model.'
 
@@ -45,19 +46,24 @@ def save(path, value):
 
 def parse_probes():
     raw = SPEC.read_bytes()
-    text = raw.decode('utf-8')
+    text = raw.decode('utf-8').replace('\r\n', '\n')
     rule = r'^## (P[0-9]{2}) · Full (.+)$'
     parts = re.split(rule, text, flags=re.M)
     probes = []
     for index in range(1, len(parts), 3):
         probe, sections, body = parts[index:index + 3]
         lines = [line for line in body.splitlines() if line.strip()]
-        if not lines or any(not line.startswith('> ') for line in lines):
-            raise ValueError(f'{probe}: use one quoted line per user turn')
+        if not lines or any(not line.startswith('> ') or not line[2:].strip() for line in lines):
+            raise ValueError(f'{probe}: use one nonempty quoted line per user turn')
         probes.append({'id': probe, 'fullSections': sections, 'turns': [line[2:] for line in lines]})
-    if [p['id'] for p in probes] != [f'P{n:02d}' for n in range(1, 6)]:
-        raise ValueError('Expected exactly P01 through P05, in order')
+    if not probes or [p['id'] for p in probes] != [f'P{n:02d}' for n in range(1, len(probes) + 1)]:
+        raise ValueError('Expected consecutive probe IDs beginning at P01')
     return digest(raw), probes
+
+
+def live_plan(probes):
+    return [dict(probe, cases=[], status='offline-only') if probe['id'] in OFFLINE_ONLY
+            else dict(probe, cases=[]) for probe in probes]
 
 
 def modules():
@@ -162,13 +168,17 @@ def test_offline():
             raise AssertionError('Excluded persona content was accepted')
         if not baseline:
             raise AssertionError('No proof generated')
-    if len(probes[-1]['turns']) != 2 or any(len(p['turns']) != 1 for p in probes[:-1]):
-        raise AssertionError('Unexpected probe turn count')
+    stale_fixtures = FILES.keys() - {probe['id'] for probe in probes}
+    if stale_fixtures:
+        raise ValueError(f'Fixtures for missing probes: {sorted(stale_fixtures)}')
     for fixtures in FILES.values():
         for name, body in fixtures.items():
             if name.endswith('.py'):
                 compile(body, name, 'exec')
-    print(f'Offline checks passed: {len(probes)} probes, 3 arms. PROBES.md SHA256: {spec_hash}')
+    total_turns = sum(len(probe['turns']) for probe in probes)
+    offline_ids = ', '.join(probe['id'] for probe in live_plan(probes) if probe.get('status') == 'offline-only')
+    print(f'Offline checks passed: {len(probes)} probes, {total_turns} turns, 3 arms.')
+    print(f'Offline-only: {offline_ids or "none"}. PROBES.md SHA256: {spec_hash}')
 
 
 def gateway_key():
@@ -371,7 +381,8 @@ def wait_for(check, proc, seconds):
 def blind_review(path):
     log = json.loads(path.read_bytes())
     return {'model': log['model'], 'probes': [
-        {'id': probe['id'], 'turns': probe['turns'], 'cases': [
+        {'id': probe['id'], 'turns': probe['turns'],
+         **({'status': probe['status']} if 'status' in probe else {}), 'cases': [
             {key: case[key] for key in ('caseId', 'status', 'answers', 'inputFiles', 'outputFiles') if key in case}
             for case in sorted(probe['cases'], key=lambda item: item['caseId'])]}
         for probe in log['probes']]}
@@ -384,6 +395,10 @@ def execute(options):
     spec_hash, probes = parse_probes()
     if options.approved_sha256 != spec_hash:
         raise RuntimeError('Probe hash is missing or differs from the reviewed PROBES.md')
+    probes = live_plan(probes)
+    runnable = [probe for probe in probes if probe.get('status') != 'offline-only']
+    if not runnable:
+        raise RuntimeError('No runnable probes in this set')
     engine = options.engine.resolve(strict=True)
     pty_dir = options.pty_dir.resolve(strict=True)
     version = subprocess.check_output(['node', str(engine), '--version'], text=True).strip()
@@ -403,7 +418,7 @@ def execute(options):
     native_contexts = None
     order = list(agents)
     random.SystemRandom().shuffle(order)
-    for index, probe in enumerate(probes):
+    for index, probe in enumerate(runnable):
         probe['cases'] = [{'caseId': uuid.uuid4().hex[:12], 'status': 'pending'} for _ in agents]
         for case, arm in zip(probe['cases'], order[index % 3:] + order[:index % 3]):
             mappings[case['caseId']] = {'arm': arm, 'bundle': ARMS[arm]}
@@ -412,7 +427,7 @@ def execute(options):
     flush()
     try:
         tui = Tui(engine, pty_dir, secret)
-        for probe in probes:
+        for probe in runnable:
             for case in probe['cases']:
                 case_id = case['caseId']
                 try:
