@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .base import file_marked_body
+
 DSH_PREFIX_LOADS = ("always-on", "session-start")
 
 
@@ -11,12 +13,10 @@ def dsh_prefix(pid: str, h: str, files: dict, loads: dict) -> str:
     """One self-describing prefix artifact: header + in-prefix files in
     manifest order, each behind a `<!-- persona:file NAME -->` marker so
     readback can split byte-exactly."""
-    parts = [f"<!-- persona:{pid}@{h} -->\n"]
-    for name, content in files.items():
-        if loads.get(name) in DSH_PREFIX_LOADS:
-            parts.append(f"<!-- persona:file {name} -->\n")
-            parts.append(content.decode("utf-8"))
-    return "".join(parts)
+    return file_marked_body(pid, h, {
+        name: content for name, content in files.items()
+        if loads.get(name) in DSH_PREFIX_LOADS
+    })
 
 
 class DshAdapter:

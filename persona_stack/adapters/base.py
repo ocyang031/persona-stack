@@ -54,3 +54,14 @@ def inner_regex(pid: str) -> "re.Pattern[bytes]":
         + esc + rb"@\S+ END -->",
         re.S,
     )
+
+
+def file_marked_body(pid: str, h: str, files: dict) -> str:
+    """Concatenated artifact body shared by single-artifact hosts: a header
+    naming the derived hash, then each file behind a `<!-- persona:file NAME -->`
+    marker so readback can split byte-exactly. Callers decide what goes in."""
+    parts = [f"<!-- persona:{pid}@{h} -->\n"]
+    for name, content in files.items():
+        parts.append(f"<!-- persona:file {name} -->\n")
+        parts.append(content.decode("utf-8"))
+    return "".join(parts)

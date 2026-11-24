@@ -18,11 +18,12 @@ clone 即全量副本）**；`sources/<id>/` 是编辑现场（在仓库内、�
 
 | 路径 | 角色 | agent 读写权 |
 |---|---|---|
-| `persona.py` | 全部实现（CLI + adapter + registry + render，单文件） | 可改；改后 `python -m py_compile persona.py` 必过 |
+| `persona.py` | 入口壳（~20 行）：re-export + `main()`；实现已迁到 `persona_stack/` | 可改；改后 `python -m py_compile persona.py` 必过 |
+| `persona_stack/` | 实现：`paths`/`util` · `manifest` · `registry`（hash+bundle+render） · `state`（bindings+receipts） · `adapters/`（每宿主一文件） · `commands`（十动词） · `cli`（argparse） | 可改；**加宿主 = 新建 `adapters/<host>.py` + 一行 `register()`** |
 | `sources/<id>/` | 人设编辑现场（五文件 + persona.yaml，随 clone 分发，自由编辑） | 可编辑；晋升走 publish |
 | `verify.py` | bundles 完整性闸门（重算全部 bundle hash + index/绑定对账） | 可改；commit 前必须绿 |
 | `.githooks/pre-commit` | 提交闸门：跑 verify.py，bundles 被偷改则拒绝提交 | 启用方式：`git config core.hooksPath .githooks`（clone 后需一次性设置） |
-| `bindings.json` | 绑定表（宿主应然状态） | 可改；schema：slot/persona/hash/host/target/vars/pin/device/bound_at |
+| `bindings.json` | 绑定表（宿主应然状态） | 可改；schema：slot/persona/hash/host/target/vars/pin/device/bound_at（+ 可选 `include`：该槽位的文件白名单，缺省用 adapter 的 `wants`） |
 | `bundles/<id>/<hash>/` | 不可变快照 | **只增不改不删**（纪律 1） |
 | `receipts/` | 回执流 | 只追加；gitignore |
 | `dsh-bridge.py` | linux-sandbox 设备接线胶水（**非适配器**，硬编码该机路径） | 原则上不改 |

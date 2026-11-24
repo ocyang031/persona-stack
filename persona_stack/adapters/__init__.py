@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from ..util import die
 from .base import Adapter
+from .codex import CodexAdapter
 from .dsh import DshAdapter
 from .file import FileAdapter
 
@@ -18,6 +19,7 @@ def register(adapter: "type[Adapter]") -> None:
 
 register(FileAdapter)
 register(DshAdapter)
+register(CodexAdapter)
 
 
 def get_adapter(host: str) -> "type[Adapter]":
