@@ -25,7 +25,7 @@ SPEC = ROOT / 'PROBES.md'
 MODEL = 'home-magpie/meoo/deepseek-v4.1-flash-1017'
 ROUTE = ('magpie', MODEL, 'low')
 ARMS = {'bare': None, 'minimal': 'aed40828ab97718e', 'full': 'b08ee5f92df2eaed'}
-# OFFLINE_ONLY = {'P01', 'P04'}
+OFFLINE_ONLY = {'P01', 'P04'}
 PROFILE_FILES = ('package.json', 'cordis.yml', 'cordis.patch.yml', 'pnpm-workspace.yaml')
 STOCK = 'You are a coding agent powered by the {{model}} model.'
 
