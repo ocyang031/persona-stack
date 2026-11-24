@@ -19,6 +19,7 @@ class FileAdapter:
     @staticmethod
     def place(target: Path, pid: str, h: str, files: dict, loads: dict) -> None:
         target.mkdir(parents=True, exist_ok=True)
+        pat = block_regex(pid)
         for name, content in files.items():
             p = target / name
             block = b"".join((
@@ -30,11 +31,11 @@ class FileAdapter:
                 p.write_bytes(f"# persona:{pid}@{h} managed file\n\n".encode("utf-8") + block)
                 continue
             data = p.read_bytes()
-            pat = block_regex(pid)
             if pat.search(data):
                 p.write_bytes(pat.sub(lambda _m: block, data))
             else:
-                p.write_bytes(data.rstrip(b"\n") + b"\n\n" + block)
+                p.write_bytes(data + b"\n" + block)
+        FileAdapter._remove_blocks(target, pid, keep=files)
 
     @staticmethod
     def readback(target: Path, pid: str, names: list, loads: dict):
@@ -42,31 +43,33 @@ class FileAdapter:
             return None
         out: "dict[str, bytes]" = {}
         pat = inner_regex(pid)
-        for name in names:
-            p = target / name
+        for p in target.glob("*.md"):
             if not p.is_file():
                 continue
             m = pat.search(p.read_bytes())
             if m:
-                out[name] = m.group(1) + b"\n"
+                out[p.name] = m.group(1) + b"\n"
         return out
 
     @staticmethod
     def remove(target: Path, pid: str, files: dict, loads: dict) -> "list[str]":
-        if not target.is_dir():
-            return []
-        pat = block_regex(pid)
+        FileAdapter._remove_blocks(target, pid, keep={})
+        return []
+
+    @staticmethod
+    def _remove_blocks(target: Path, pid: str, keep: dict) -> None:
+        block = block_regex(pid)
+        pat = re.compile(rb"\n?" + block.pattern, block.flags)
         # a file we created holds only our header — deleting the block must take
         # the header with it, or an empty shell is left behind
         hdr = re.compile(rb"^\s*# persona:" + re.escape(pid.encode()) + rb"@\S+ managed file\s*$")
-        for p in target.glob("*"):
-            if not p.is_file():
+        for p in target.glob("*.md"):
+            if p.name in keep or not p.is_file():
                 continue
             data = p.read_bytes()
             if pat.search(data):
-                new = re.sub(rb"\n{3,}", b"\n\n", pat.sub(b"", data)).strip(b"\n")
+                new = pat.sub(b"", data)
                 if new and not hdr.match(new):
-                    p.write_bytes(new + b"\n")
+                    p.write_bytes(new)
                 else:
                     p.unlink()
-        return []

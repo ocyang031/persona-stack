@@ -1,10 +1,27 @@
 # persona-stack
 
-人设注入工具：人设文件集（AGENTS / IDENTITY / SOUL / TOOLS / CONTEXT）→ 不可变快照 → 多宿主收敛。
+将独立的人设提示词模块打成不可变快照，在各宿主按绑定使用一个模块或拼装一组模块。
 
 **权威版本在 GitHub**：`git@github.com:ocyang031/persona-stack.git`。仓库里的 `bundles/` 是人设的不可变版本库，`sources/` 是编辑现场，clone 一次全拿到。
 
 **解决什么问题**：人设编辑一次、发布成不可变版本，任意多台宿主机上的副本自动对齐该版本，并报告谁被改了。
+
+## 选用与维护模块
+
+枭枭提供四份可直接使用的提示词。选执行规则用 `AGENTS.md`，选身份用 `IDENTITY.md`，选语气与价值观用 `SOUL.md`，选工具操作流程用 `TOOLS.md`。也可以按需要组合，例如身份加语气。直接使用时，把所需模块正文交给宿主的指令入口。
+
+使用本工具时，`--include` 指定一份或多份，以逗号分隔。DSH 默认拼装全部模块，Codex 默认拼装身份与语气，File/OpenClaw 默认逐文件落位。多份文件按 `persona.yaml` 顺序组装。
+
+```powershell
+python persona.py bind dsh.voice --host dsh --target ./voice-slot --include 'SOUL.md' xiaoxiao
+python persona.py bind dsh.persona --host dsh --target ./persona-slot --include 'IDENTITY.md,SOUL.md' xiaoxiao
+```
+
+修改人设时编辑 `sources/<id>/`。模块正文只写模型需要执行的内容，维护分工和组装契约见 [DESIGN.md](./DESIGN.md)。先运行 `python persona.py validate sources/xiaoxiao`，用 `pack` 生成本地快照。
+
+### 旧版 DSH 迁移
+
+先记下旧绑定的参数，运行 `python persona.py unbind <slot> --yes`，让工具按旧快照移除原来的托管产物，包括字节未改动的工作区副本。宿主上改过的副本会报告并保留，所需内容应人工合入新模块。再用新快照重新 `bind`，运行 `reconcile <slot>` 并重启对应会话。
 
 ## CLI 使用指南
 
@@ -23,7 +40,7 @@
 
 | 场景 | 操作 |
 |---|---|
-| **正式改版** | 编辑 `sources/<id>/` 人设文件集 → `publish` → `reconcile` → 重启宿主 |
+| **正式改版** | 编辑 `sources/<id>/` 人设文件集 → `publish` → `bind` 到新版本 → `reconcile` → 重启宿主 |
 | **临时改（不发版）** | 直接编辑本机落位目录的 `persona.prefix.txt`（位置见 `bindings.json` 对应绑定的 target）→ 重启宿主。`status` 显示 drifted = 临时版生效中的标记 |
 | **临时版恢复正式版** | `reconcile` |
 | **临时版转正** | `absorb <slot> --yes`（落位上的编辑写回 sources 作为提案）→ `publish` |

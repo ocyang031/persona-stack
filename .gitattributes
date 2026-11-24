@@ -1,0 +1,3 @@
+# Hashes and adapter round trips require identical bytes on every platform.
+/sources/** text eol=lf
+/bundles/** text eol=lf

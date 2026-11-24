@@ -7,8 +7,8 @@
 
 ## 项目一句话
 
-人设文件集（AGENTS/IDENTITY/SOUL/TOOLS/CONTEXT）的注入工具 = registry（不可变快照）
-+ reconciler（多宿主收敛）。不是编译器：人设文件集即最终形态，不拼装、不碎片化。
+人设文件集（AGENTS/IDENTITY/SOUL/TOOLS）的注入工具 = registry（不可变快照）
++ reconciler（多宿主收敛）。每个模块可独立使用，绑定选择一个或多个模块，适配器负责落位和可逆拼装。
 
 **权威版本 = 本仓库 `bundles/`（远端 `git@github.com:ocyang031/persona-stack.git`，
 clone 即全量副本）**；`sources/<id>/` 是编辑现场（在仓库内、随 clone 分发），
@@ -50,11 +50,11 @@ clone 即全量副本）**；`sources/<id>/` 是编辑现场（在仓库内、�
 ## 命令面（9 动词）
 
 ```
-python persona.py validate <源目录>          # lint：schema/锚点/按名引用
+python persona.py validate <源目录>          # lint：清单/编码/正文及文件依赖
 python persona.py pack <源目录>             # → bundles/<id>/<hash>/，幂等
 python persona.py publish                    # git 提交 + push
 python persona.py list                       # registry + 绑定概览
-python persona.py bind <slot> [--host] [--target] [--var K=V] [--device] [--pin] <persona>[@hash]
+python persona.py bind <slot> [--host] [--target] [--include A.md,B.md] [--var K=V] [--device] [--pin] <persona>[@hash]
 python persona.py status [slot] [--device]   # 漂移报告
 python persona.py reconcile [slot] [--pull] [--device]
 python persona.py revert <slot>              # 指回上一版本并收敛
@@ -76,8 +76,7 @@ exit：0=全收敛；2=有漂移/缺件；其余=参数错。
 
 ## dsh 接线知识（M2 实战挣出来的，别再踩）
 
-- **适配器层只有一个 `host: dsh`**：磁盘契约 = prefix.txt（always-on+session-start 拼接）
-  + on-demand 平铺。TUI 与 web 产品同契约 → **不拆 dsh/dsh-tui**；产品差异在接线层，
+- **适配器层只有一个 `host: dsh`**：磁盘契约 = 将绑定选中的模块按清单顺序拼入 prefix.txt。TUI 与 web 产品同契约 → **不拆 dsh/dsh-tui**；产品差异在接线层，
   由 slot/device 表达。
 - **TUI persona 体系**：会话 persona 由 agent 预设内 `dsh-persona` 行供给（standard
   preset 默认文案 `You are a coding agent powered by the {{model}} model.`），**遮蔽**
@@ -119,7 +118,7 @@ exit：0=全收敛；2=有漂移/缺件；其余=参数错。
 ## 常见任务配方
 
 - **改人设内容（正式版）**：编辑 `sources/xiaoxiao/` 人设文件集 → `publish`
-  （自动 validate+hash+快照+提交+推送）→ `reconcile dsh.local` → 提醒用户 `/restart`。
+  （自动 validate+hash+快照+提交+推送）→ 按现有参数 `bind` 到新版本 → `reconcile dsh.local` → 提醒用户 `/restart`。
 - **临时人设（不发版）**：直接改**落位目录**的 `persona.prefix.txt`（接线读它）→
   `/restart`。reconcile 读 bundles 快照、不读 sources 草稿——改 sources 不跑
   publish 是刷不下去的。`status` 报 drifted = 临时版生效中的标记；恢复正式版 =

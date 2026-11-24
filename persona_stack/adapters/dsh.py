@@ -1,4 +1,4 @@
-"""dsh-style host: one prefix artifact concatenates the always-on set."""
+"""Compose selected modules into the DSH prompt prefix."""
 from __future__ import annotations
 
 import re
@@ -6,7 +6,12 @@ from pathlib import Path
 
 from .base import file_marked_body
 
-DSH_PREFIX_LOADS = ("always-on", "session-start")
+# Placement rules for immutable snapshots made before module composition.
+LEGACY_PREFIX_LOADS = ("always-on", "session-start")
+
+
+def _legacy_copy(name: str, loads: dict) -> bool:
+    return name in loads and loads[name] not in LEGACY_PREFIX_LOADS
 
 
 def dsh_prefix(pid: str, h: str, files: dict, loads: dict) -> str:
@@ -15,27 +20,23 @@ def dsh_prefix(pid: str, h: str, files: dict, loads: dict) -> str:
     readback can split byte-exactly."""
     return file_marked_body(pid, h, {
         name: content for name, content in files.items()
-        if loads.get(name) in DSH_PREFIX_LOADS
+        if not _legacy_copy(name, loads)
     })
 
 
 class DshAdapter:
-    """dsh-style host: the system prompt is one stable prefix region, so the
-    session-start distinction collapses — everything session-start-or-stronger
-    is concatenated into one self-describing prefix artifact; on-demand files
-    are delivered as plain workspace copies the agent reaches by pointer."""
+    """Write one prefix. Preserve placement and rollback for old snapshots."""
     name = "dsh"
     target_kind = "dir"
     wants = None
     PREFIX = "persona.prefix.txt"
-    IN_PREFIX = DSH_PREFIX_LOADS
 
     @staticmethod
     def place(target: Path, pid: str, h: str, files: dict, loads: dict) -> None:
         target.mkdir(parents=True, exist_ok=True)
         (target / DshAdapter.PREFIX).write_bytes(dsh_prefix(pid, h, files, loads).encode("utf-8"))
         for name, content in files.items():
-            if loads.get(name) not in DshAdapter.IN_PREFIX:
+            if _legacy_copy(name, loads):
                 (target / name).write_bytes(content)
 
     @staticmethod
@@ -50,7 +51,7 @@ class DshAdapter:
             for i in range(1, len(pieces) - 1, 2):
                 out[pieces[i].decode("utf-8")] = pieces[i + 1]
         for name in names:
-            if loads.get(name) not in DshAdapter.IN_PREFIX:
+            if _legacy_copy(name, loads):
                 p = target / name
                 if p.is_file():
                     out[name] = p.read_bytes()
@@ -65,12 +66,12 @@ class DshAdapter:
             pfx.unlink()
         kept = []
         for name, content in files.items():
-            if loads.get(name) in DshAdapter.IN_PREFIX:
+            if not _legacy_copy(name, loads):
                 continue
             p = target / name
             if not p.is_file():
                 continue
-            # on-demand files are plain copies with no marker — only delete the
+            # Legacy workspace copies have no marker — only delete the
             # ones still byte-identical to the bundle, else it is host content
             if p.read_bytes() == content:
                 p.unlink()

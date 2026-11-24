@@ -7,7 +7,6 @@ from pathlib import Path
 from .util import die
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-ANCHOR_RE = re.compile(r"\(([A-Z]+_[A-Z0-9_]+)\)")
 PLACEHOLDER_RE = re.compile(r"\{\{([A-Za-z][A-Za-z0-9_]*)\}\}")
 
 
@@ -58,13 +57,15 @@ def load_source(src: Path):
         die(f"source manifest not found: {mf}")
     manifest_bytes = mf.read_bytes()
     m = parse_manifest(manifest_bytes.decode("utf-8"))
-    files: "list[tuple[str, str, bytes]]" = []
+    files: "list[tuple[str, bytes]]" = []
     for f in m.get("files") or []:
-        name, load = f.get("name"), f.get("load", "on-demand")
+        name = f.get("name")
+        if not name or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*\.md", name):
+            die(f"invalid persona file name: {name!r}")
         p = src / name
         if not p.is_file():
             die(f"manifest lists missing file: {p}")
-        files.append((name, load, p.read_bytes()))
+        files.append((name, p.read_bytes()))
     return m, manifest_bytes, files
 
 
@@ -82,46 +83,38 @@ def validate_source(src: Path):
     if not manifest_bytes.decode("utf-8", "replace").strip():
         errors.append("persona.yaml is empty")
 
-    for name, load, content in files:
-        if load not in ("always-on", "session-start", "on-demand"):
-            errors.append(f"{name}: unknown load hint {load!r}")
+    names = {name for name, _ in files}
+    if len(names) != len(files):
+        errors.append("manifest lists duplicate files")
+    if any("load" in entry for entry in m.get("files", [])):
+        errors.append("persona.yaml: remove load hints; select modules with bind --include")
+
+    module_names = names | ({"CONTEXT.md"} if m.get("id") == "xiaoxiao" else set())
+    for name, content in files:
         try:
-            content.decode("utf-8")
+            text = content.decode("utf-8")
         except UnicodeDecodeError:
             errors.append(f"{name}: not valid utf-8")
+            continue
+        if not text.strip():
+            errors.append(f"{name}: prompt body is empty")
+        if content.startswith(b"\xef\xbb\xbf") or text.lstrip().startswith("---\n"):
+            errors.append(f"{name}: use UTF-8 without BOM or frontmatter")
+        if re.search(r"^#{1,6}\s+(Positioning|Boundary Definition|Slot registry)\b", text, re.M | re.I):
+            errors.append(f"{name}: move maintenance headings to DESIGN.md or README.md")
+        if re.search(r"<!--\s*persona:", text):
+            errors.append(f"{name}: persona envelope markers are reserved for adapters")
+        refs = sorted(module for module in module_names if re.search(
+            rf"(?<![\w.-]){re.escape(module)}(?![\w-])", text, re.I
+        ))
+        if refs:
+            errors.append(f"{name}: remove module filename references: {', '.join(refs)}")
         if not content.endswith(b"\n"):
             errors.append(f"{name}: must end with a newline (byte-exact envelopes need it)")
         if b"\r" in content:
-            errors.append(f"{name}: contains CR — the dsh prefix rides a YAML scalar, and YAML "
-                          f"normalizes CRLF; byte-exact hosts need LF-only sources")
+            errors.append(f"{name}: contains CR; byte-exact hosts need LF-only sources")
 
-    # anchor registry sync: anchors in IDENTITY/SOUL vs CONTEXT slot table
-    by_name = {name: content for name, _, content in files}
-    anchors: "set[str]" = set()
-    for name in ("IDENTITY.md", "SOUL.md"):
-        if name in by_name:
-            anchors |= set(ANCHOR_RE.findall(by_name[name].decode("utf-8")))
-    ctx_rows: "set[str]" = set()
-    if "CONTEXT.md" in by_name:
-        text = by_name["CONTEXT.md"].decode("utf-8")
-        match = re.search(r"## Slot registry.*?(?=\n## |\Z)", text, re.S)
-        if match:
-            ctx_rows = set(re.findall(r"^\|\s*([A-Z]+_[A-Z0-9_]+)\s*\|", match.group(0), re.M))
-    missing = anchors - ctx_rows
-    extra = ctx_rows - anchors
-    if missing:
-        errors.append(f"anchors missing from CONTEXT slot registry: {sorted(missing)}")
-    if extra:
-        errors.append(f"CONTEXT slot registry rows without a live anchor: {sorted(extra)}")
-
-    # bare "Section N" refs outside AGENTS.md (cross-file refs must be by name)
-    for name, _, content in files:
-        if name != "AGENTS.md" and re.search(r"Section \d|§\d", content.decode("utf-8")):
-            warnings.append(f"{name}: bare 'Section N' reference — use a section/file name instead")
-
-    # unresolved placeholders when no vars in play is fine at pack time; just report
-    for name, _, content in files:
-        found = set(PLACEHOLDER_RE.findall(content.decode("utf-8")))
+        found = set(PLACEHOLDER_RE.findall(text))
         if found:
             warnings.append(f"{name}: placeholders present {sorted(found)} — bind with --var to fill")
 

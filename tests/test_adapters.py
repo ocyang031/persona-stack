@@ -46,6 +46,17 @@ class FileAdapterTest(unittest.TestCase):
         got = self.a.readback(self.root, PID, list(FILES), LOADS)
         self.assertEqual(got, FILES)
 
+    def test_replace_selection_removes_excluded_blocks(self):
+        self.root.mkdir(parents=True)
+        host = b"host notes\n\n\nsecond section\n\n"
+        (self.root / "TOOLS.md").write_bytes(host)
+        self.a.place(self.root, PID, H, FILES, {})
+        selected = {"SOUL.md": FILES["SOUL.md"]}
+        self.a.place(self.root, PID, H, selected, {})
+        self.assertEqual(self.a.readback(self.root, PID, list(selected), {}), selected)
+        self.assertEqual((self.root / "TOOLS.md").read_bytes(), host)
+        self.assertCountEqual([p.name for p in self.root.iterdir()], ["SOUL.md", "TOOLS.md"])
+
     def test_remove_restores_empty_dir(self):
         self.a.place(self.root, PID, H, FILES, LOADS)
         self.a.remove(self.root, PID, FILES, LOADS)
@@ -62,7 +73,7 @@ class FileAdapterTest(unittest.TestCase):
 
 
 class DshAdapterTest(unittest.TestCase):
-    """dsh: one prefix artifact + plain copies for on-demand files."""
+    """DSH composition and legacy snapshot rollback."""
 
     def setUp(self):
         self._tmp = TemporaryDirectory()
@@ -71,6 +82,15 @@ class DshAdapterTest(unittest.TestCase):
 
     def tearDown(self):
         self._tmp.cleanup()
+
+    def test_modules_can_be_used_alone_or_composed(self):
+        modules = {name: body for name, body in FILES.items() if name != "CONTEXT.md"}
+        for selected in ({"TOOLS.md": modules["TOOLS.md"]}, modules):
+            with self.subTest(names=list(selected)):
+                self.a.place(self.root, PID, H, selected, {})
+                self.assertEqual(self.a.readback(self.root, PID, list(selected), {}), selected)
+                self.assertEqual([p.name for p in self.root.iterdir()], ["persona.prefix.txt"])
+                self.assertEqual(self.a.remove(self.root, PID, selected, {}), [])
 
     def test_placement_shape(self):
         self.a.place(self.root, PID, H, FILES, LOADS)
@@ -113,6 +133,11 @@ class CodexAdapterTest(unittest.TestCase):
         sub = {"IDENTITY.md": FILES["IDENTITY.md"], "SOUL.md": FILES["SOUL.md"]}
         self.a.place(self.path, PID, H, sub, LOADS)
         self.assertEqual(self.a.readback(self.path, PID, list(sub), LOADS), sub)
+
+    def test_single_module_preserves_trailing_blank_line(self):
+        selected = {"TOOLS.md": b"# Tool use\n\nRun only authorized tools.\n\n"}
+        self.a.place(self.path, PID, H, selected, {})
+        self.assertEqual(self.a.readback(self.path, PID, list(selected), {}), selected)
 
     def test_host_block_preserved_and_restored(self):
         host = b"<!-- other-tool:begin -->\n# other\n<!-- other-tool:end -->\n"

@@ -15,9 +15,8 @@ class CodexAdapter:
     single file the host — and often other tools — already own. Persona goes
     into one envelope, everything outside it stays untouched.
 
-    The host offers only one slot, so the load hints collapse: only files codex
-    can actually consume are placed (see `wants`); on-demand sets have nowhere
-    to mount and are dropped rather than pasted in permanently."""
+    The default selection supplies identity and voice. A binding can
+    select a different set of modules with --include."""
     name = "codex"
     target_kind = "file"
     wants = ("IDENTITY.md", "SOUL.md")
@@ -56,7 +55,9 @@ class CodexAdapter:
         pieces = FILE_MARKER.split(m.group(1))
         for i in range(1, len(pieces) - 1, 2):
             body = pieces[i + 1]
-            out[pieces[i].decode("utf-8")] = body if body.endswith(b"\n") else body + b"\n"
+            if i == len(pieces) - 2:
+                body += b"\n"
+            out[pieces[i].decode("utf-8")] = body
         return out
 
     @staticmethod

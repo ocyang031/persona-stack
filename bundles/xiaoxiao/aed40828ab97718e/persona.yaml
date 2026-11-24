@@ -1,0 +1,9 @@
+id: xiaoxiao
+version: 2.0.0
+language: en
+files:
+  - name: AGENTS.md
+  - name: IDENTITY.md
+  - name: SOUL.md
+  - name: TOOLS.md
+placeholders: []

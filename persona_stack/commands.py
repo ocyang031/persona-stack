@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from .adapters import get_adapter
-from .manifest import validate_source
+from .manifest import load_source, validate_source
 from .paths import BUNDLES_DIR, HASH_LEN, REPO, SOURCES_DIR
 from .registry import (
     canonical_hash,
@@ -39,7 +39,7 @@ def cmd_validate(args) -> int:
 
 def cmd_pack(args) -> int:
     src = Path(args.source).resolve()
-    m, manifest_bytes, files, errors, warnings = validate_source(src)
+    m, manifest_bytes, plain, errors, warnings = validate_source(src)
     for w in warnings:
         print(f"warn: {w}")
     if errors:
@@ -47,7 +47,6 @@ def cmd_pack(args) -> int:
             print(f"error: {e}")
         die("pack: source failed validation; fix the source files first")
     pid = m["id"]
-    plain = [(name, content) for name, _, content in files]
     h = canonical_hash(manifest_bytes, plain)
     bdir = BUNDLES_DIR / pid / h
     if bdir.exists():
@@ -131,6 +130,11 @@ def cmd_bind(args) -> int:
         if adapter.target_kind == "dir" and target.is_file():
             die(f"host {args.host!r} places files into a directory; target is a file: {target}")
     include = [s.strip() for s in (getattr(args, "include", "") or "").split(",") if s.strip()]
+    _, files, _ = load_bundle(pid, h)
+    try:
+        _selected({"include": include}, adapter, files)
+    except KeyError as exc:
+        die(str(exc))
     data = load_bindings()
     entry = find_binding(data, args.slot)
     if entry is None:
@@ -201,7 +205,13 @@ def _selected(e: dict, adapter, files: dict) -> dict:
     keep = e.get("include") or list(adapter.wants or ())
     if not keep:
         return files
-    return {n: c for n, c in files.items() if n in keep}
+    missing = set(e.get("include") or ()) - files.keys()
+    if missing:
+        raise KeyError(f"unknown persona modules: {', '.join(sorted(missing))}")
+    selected = {n: c for n, c in files.items() if n in keep}
+    if not selected:
+        raise KeyError("no persona modules selected; set --include to a manifest file name")
+    return selected
 
 
 def _check(e: dict):
@@ -212,8 +222,8 @@ def _check(e: dict):
         return "missing-bundle", f"{pid}@{h} not in local registry — pack or pull"
     manifest_bytes, files, loads = load_bundle(pid, h)
     adapter = get_adapter(e["host"])
-    files = _selected(e, adapter, files)
     try:
+        files = _selected(e, adapter, files)
         rendered = render_files(files, e.get("vars") or {})
     except KeyError as exc:
         return "render-fail", f"{exc}"
@@ -225,6 +235,7 @@ def _check(e: dict):
     if names:
         return "partial", f"missing on host: {', '.join(names)}"
     diff = [n for n in files if got[n] != rendered[n]]
+    diff.extend(sorted(got.keys() - files.keys()))
     if diff:
         state = "drifted" if not e.get("pin") else "drifted-pinned"
         return state, f"host differs: {', '.join(diff)} (reconcile=revert, absorb=promote)"
@@ -277,8 +288,8 @@ def cmd_reconcile(args) -> int:
             continue
         manifest_bytes, files, loads = load_bundle(pid, h)
         adapter = get_adapter(e["host"])
-        files = _selected(e, adapter, files)
         try:
+            files = _selected(e, adapter, files)
             rendered = render_files(files, e.get("vars") or {})
         except KeyError as exc:
             receipt(e["slot"], persona=pid, hash=h, ok=False, detail=f"render: {exc}")
@@ -343,7 +354,17 @@ def cmd_absorb(args) -> int:
             die(f"source directory unreachable — copy bundle {pid}@{h} into sources/{pid}/ first, then absorb")
     _, files, loads = load_bundle(pid, h)
     adapter = get_adapter(e["host"])
-    files = _selected(e, adapter, files)
+    try:
+        files = _selected(e, adapter, files)
+    except KeyError as exc:
+        die(str(exc))
+    source_manifest, _, source_files = load_source(src)
+    source_is_legacy = any("load" in entry for entry in source_manifest["files"])
+    if loads and not source_is_legacy:
+        die("cannot absorb a legacy placement into module sources; merge edits into the source manually")
+    missing = files.keys() - {name for name, _ in source_files}
+    if missing:
+        die(f"cannot absorb modules absent from source: {sorted(missing)}")
     got = adapter.readback(Path(e["target"]), pid, list(files), loads)
     if not got:
         die("nothing readable on host side")

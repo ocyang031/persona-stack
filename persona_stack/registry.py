@@ -35,7 +35,7 @@ def load_index(pid: str) -> dict:
 
 def save_index(pid: str, idx: dict) -> None:
     index_file(pid).parent.mkdir(parents=True, exist_ok=True)
-    index_file(pid).write_text(json.dumps(idx, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    index_file(pid).write_bytes((json.dumps(idx, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
 
 
 def resolve_ref(ref: str) -> "tuple[str, str]":
@@ -56,10 +56,12 @@ def load_bundle(pid: str, h: str) -> "tuple[bytes, dict[str, bytes], dict[str, s
     m = parse_manifest(manifest_bytes.decode("utf-8"))
     files: "dict[str, bytes]" = {}
     loads: "dict[str, str]" = {}
-    for f in m["files"]:
-        name, load = f["name"], f.get("load", "on-demand")
+    legacy = any("load" in entry for entry in m["files"])
+    for entry in m["files"]:
+        name = entry["name"]
         files[name] = (bdir / name).read_bytes()
-        loads[name] = load
+        if legacy:
+            loads[name] = entry.get("load", "on-demand")
     return manifest_bytes, files, loads
 
 

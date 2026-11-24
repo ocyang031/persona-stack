@@ -20,7 +20,7 @@ class Adapter(Protocol):
     target_kind  — "dir" places many files into a directory; "file" places one
                    artifact at a path the host already owns. Checked at bind.
     wants        — file whitelist this host should receive; None = every file
-                   the manifest declares (the load hints decide placement).
+                   the manifest declares.
     """
     name: str
     aliases: tuple[str, ...]
@@ -36,7 +36,7 @@ class Adapter(Protocol):
     @staticmethod
     def remove(target: Path, pid: str, files: dict, loads: dict) -> "list[str]":
         """Strip this host's persona placement. `files`/`loads` are the bundle
-        set (an adapter needs them to tell its own copies from host edits).
+        set and any legacy placement metadata.
         Returns notes for anything deliberately left behind."""
         ...
 
