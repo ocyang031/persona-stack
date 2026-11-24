@@ -57,9 +57,23 @@ class DshAdapter:
         return out
 
     @staticmethod
-    def remove(target: Path, pid: str) -> None:
+    def remove(target: Path, pid: str, files: dict, loads: dict) -> "list[str]":
         if not target.is_dir():
-            return
+            return []
         pfx = target / DshAdapter.PREFIX
         if pfx.is_file():
             pfx.unlink()
+        kept = []
+        for name, content in files.items():
+            if loads.get(name) in DshAdapter.IN_PREFIX:
+                continue
+            p = target / name
+            if not p.is_file():
+                continue
+            # on-demand files are plain copies with no marker — only delete the
+            # ones still byte-identical to the bundle, else it is host content
+            if p.read_bytes() == content:
+                p.unlink()
+            else:
+                kept.append(f"kept {name} — modified on host, not ours to delete")
+        return kept

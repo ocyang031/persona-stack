@@ -60,15 +60,16 @@ class CodexAdapter:
         return out
 
     @staticmethod
-    def remove(target: Path, pid: str) -> None:
+    def remove(target: Path, pid: str, files: dict, loads: dict) -> "list[str]":
         if not target.is_file():
-            return
+            return []
         pat = block_regex(pid)
         data = target.read_bytes()
         if not pat.search(data):
-            return
+            return [f"no persona:{pid} block found in {target}"]
         new = re.sub(rb"\n{3,}", b"\n\n", pat.sub(b"", data)).strip(b"\n")
         if new:
             target.write_bytes(new + b"\n")
         else:
             target.unlink()
+        return []

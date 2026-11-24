@@ -34,7 +34,11 @@ class Adapter(Protocol):
     def readback(target: Path, pid: str, names: list, loads: dict) -> "dict[str, bytes] | None": ...
 
     @staticmethod
-    def remove(target: Path, pid: str) -> None: ...
+    def remove(target: Path, pid: str, files: dict, loads: dict) -> "list[str]":
+        """Strip this host's persona placement. `files`/`loads` are the bundle
+        set (an adapter needs them to tell its own copies from host edits).
+        Returns notes for anything deliberately left behind."""
+        ...
 
 
 

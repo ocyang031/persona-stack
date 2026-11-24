@@ -52,17 +52,21 @@ class FileAdapter:
         return out
 
     @staticmethod
-    def remove(target: Path, pid: str) -> None:
+    def remove(target: Path, pid: str, files: dict, loads: dict) -> "list[str]":
         if not target.is_dir():
-            return
+            return []
         pat = block_regex(pid)
+        # a file we created holds only our header — deleting the block must take
+        # the header with it, or an empty shell is left behind
+        hdr = re.compile(rb"^\s*# persona:" + re.escape(pid.encode()) + rb"@\S+ managed file\s*$")
         for p in target.glob("*"):
             if not p.is_file():
                 continue
             data = p.read_bytes()
             if pat.search(data):
                 new = re.sub(rb"\n{3,}", b"\n\n", pat.sub(b"", data)).strip(b"\n")
-                if new:
+                if new and not hdr.match(new):
                     p.write_bytes(new + b"\n")
                 else:
                     p.unlink()
+        return []
