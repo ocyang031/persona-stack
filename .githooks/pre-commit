@@ -12,3 +12,10 @@ To restore a tampered bundle: git checkout -- bundles/
 EOF
     exit 1
 }
+
+# adapter round-trips: place → readback → remove must stay byte-exact. The
+# remove path is the one that deletes from a host, so it ships guarded.
+python -m unittest discover -s tests >/dev/null 2>&1 || {
+    echo "commit blocked: adapter round-trip tests failed — run: python -m unittest discover -s tests" >&2
+    exit 1
+}
