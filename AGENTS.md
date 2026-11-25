@@ -24,7 +24,7 @@ clone 即全量副本）**；`sources/<id>/` 是编辑现场（在仓库内、�
 | `verify.py` | bundles 完整性闸门（重算全部 bundle hash + index/绑定对账） | 可改；commit 前必须绿 |
 | `.githooks/pre-commit` | 提交闸门：跑 verify.py，bundles 被偷改则拒绝提交 | 启用方式：`git config core.hooksPath .githooks`（clone 后需一次性设置） |
 | `bindings.json` | 绑定表（宿主应然状态） | 可改；schema：slot/persona/hash/host/target/vars/pin/device/bound_at（+ 可选 `include`：该槽位的文件白名单，缺省用 adapter 的 `wants`）。`unbind` 摘掉宿主块后会连条目一起删 |
-| `bundles/<id>/<hash>/` | 不可变快照 | **只增不改不删**（纪律 1） |
+| `bundles/<id>/<hash>/` | 不可变快照 | **只增不改不删**（纪律 1；owner 清退例外） |
 | `receipts/` | 回执流 | 只追加；gitignore |
 | `dsh-bridge.py` | linux-sandbox 设备接线胶水（**非适配器**，硬编码该机路径） | 原则上不改 |
 | `_archive/` `_scratch/` | 旧架构归档 / 本机临时 | gitignore，勿提交 |
@@ -33,10 +33,11 @@ clone 即全量副本）**；`sources/<id>/` 是编辑现场（在仓库内、�
 
 ## 硬纪律（违反即错误）
 
-1. `bundles/` 只进不改：修正 = 新版本新 hash；回滚 = 绑定指回旧 hash。唯一例外
-   = 从未被任何绑定消费的测试件（前例 renderlab：22dd80d 入库 → 03865f8 删除，
-   commit 信息必须写明理由）。机器闸门：`verify.py`（pre-commit 自动跑）重算
-   全部 bundle hash，偷改已发布快照 = commit 被拒。
+1. `bundles/` 只进不改：修正 = 新版本新 hash；回滚 = 绑定指回旧 hash。例外：
+   (a) 从未被任何绑定消费的测试件（前例 renderlab：22dd80d 入库 → 03865f8 删除，
+   commit 信息必须写明理由）；(b) owner 明确要求收窄 registry 时，先重绑所有 slot，
+   旧快照仍可从 git 历史取回，commit 信息写明清退清单与恢复点。机器闸门：
+   `verify.py`（pre-commit 自动跑）重算全部 bundle hash，偷改已发布快照 = commit 被拒。
 2. `publish` = 自动晋升 + `git add -A && git commit && git push`：先对
    `sources/<id>/` 逐个 pack（validate 不过即中止），再提交推送。人的发版动词
    只有这一个。
@@ -97,21 +98,25 @@ exit：0=全收敛；2=有漂移/缺件；其余=参数错。
   = 接线语法错）；会话级 `/debug-prompt` 导 `.dsh-prompt-debug.json`，比对 system
   prompt 内 persona 块与 prefix.txt 逐字一致（含标记）。
 
-## 当前状态（2026-11-20）
+## 当前状态（2026-11-25）
 
 - 仓库位置：`D:\00_WY\400_Code\410_Remote\persona-stack`（本机 clone；权威在 GitHub）。
 - 编辑面 = 仓库内 `sources/<id>/`（外部草稿目录已废除并删除）。
-- **absorb 端到端实测通过（本轮）**：临时改落位 → drifted（exit 2）→ reconcile 恢复
-  → 再造临时版 → `absorb --yes`（写回 sources 提案）→ 升版本 → publish（v1.1.0）→
-  bind 升级 → reconcile 收敛 → 清测试标记再发 v1.1.1 → 全链 green。版本链
-  v1.0.0/v1.1.0/v1.1.1，verify 3 bundle 全过。绑定现指 v1.1.1。
+- **版本链（2026-11-25 清退后）**：registry 只留 `v1.0.0`（基线）与 `v2.0.2`（当前修订：完整
+  AGENTS + 手工修正 SOUL + 精简 IDENTITY/TOOLS）。1.1.0–2.0.1 从工作树清退，
+  旧快照仍可从 git 历史取回；verify 2 bundle 全过。
+- 历史记录（清退前）：absorb 端到端实测通过：临时改落位 → drifted（exit 2）→
+  reconcile 恢复 → 再造临时版 → `absorb --yes`（写回 sources 提案）→ 升版本 →
+  publish（v1.1.0）→ bind 升级 → reconcile 收敛 → 清测试标记再发 v1.1.1 → 全链 green。
 - absorb 健壮化：pack-time source 失效时回退 `sources/<id>/`（仓库迁移后旧
   index 条目不再炸 absorb）。
 - M1 ✅ registry；M2 ✅ win-dsh 会话级闭环（枭枭生效，/debug-prompt 证据 d13d23f），
   linux-sandbox 待远端自验；M3 🚧 openclaw adapter 已实现，待真实宿主；M4 ✅ 渲染层
   （fixture 已清）；M5 🚧 未开工。
-- 绑定：`dsh.local`（win-dsh → `D:\00_WY\100_Works\dsh-workspace`，现指
-  v1.1.1）、`dsh.web.sandbox`（linux-sandbox → `/workspace/dsh-app/persona`）。
+- 绑定表：`dsh.local`（win-dsh → `D:\00_WY\100_Works\dsh-workspace`）与
+  `codex.global`（win-dsh → `D:\00_WY\300_Dev\.codex\AGENTS.md`）指向 v2.0.2；
+  `dsh.web.sandbox`（linux-sandbox → `/workspace/dsh-app/persona`）指向 v1.0.0。
+  **尚未 reconcile**：宿主落位仍是旧内容，status 会报漂移。
 - 实测暴露的工具坑（已修）：`Path.write_text` 默认换行翻译会在 Windows 上把 LF
   变 CRLF，破坏 readback 标记切分——落位/写回操作必须字节级（`write_bytes`）。
 
