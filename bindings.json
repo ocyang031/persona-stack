@@ -3,12 +3,17 @@
     {
       "slot": "dsh.web.sandbox",
       "persona": "xiaoxiao",
-      "hash": "c29bd653519cacb8",
+      "hash": "20cf22eb6e8fb405",
       "host": "dsh",
       "vars": {},
       "pin": false,
       "device": "linux-sandbox",
-      "bound_at": "2026-11-19T09:46:59+00:00"
+      "bound_at": "2026-11-27T06:30:11+00:00",
+      "include": [
+        "AGENTS.md",
+        "IDENTITY.md",
+        "SOUL.md"
+      ]
     },
     {
       "slot": "dsh.local",
