@@ -4,12 +4,15 @@
 独立于 persona.py，可重复执行：
   1. 逐 bundle 重算内容 hash，与目录名比对——改已发布快照必然被抓；
   2. index.json 与磁盘 bundle 双向对账（磁盘有而 index 无 / index 有而磁盘无）；
-  3. 顺带校验 bindings 引用的 bundle 存在。
+  3. 顺带校验 bindings 引用的 bundle 存在；
+  4. 权威表必须可移植：bindings.json 不得夹带机器本地 target，index 的 source
+     不得是绝对路径（落点在本机 targets.local.json，它被仓库 gitignore）。
 
 CI（.github/workflows/verify.yml）与本地同跑这一份逻辑。
 exit 0 = 注册表干净；非 0 = 有污染，先修再推。
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -17,6 +20,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from persona import canonical_hash, parse_manifest, BUNDLES_DIR, BINDINGS_FILE
 
 REPO = Path(__file__).resolve().parent
+
+ABSOLUTE_PATH_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\|/)")
+
+
+def looks_absolute(value) -> bool:
+    """True for POSIX absolute, Windows drive, and UNC paths (on any OS)."""
+    value = str(value)
+    return Path(value).is_absolute() or bool(ABSOLUTE_PATH_RE.match(value))
 
 
 def fail(msgs):
@@ -37,7 +48,14 @@ def main() -> int:
         index_hashes = []
         if idx_path.is_file():
             idx = json.loads(idx_path.read_text(encoding="utf-8"))
-            index_hashes = [b["hash"] for b in idx.get("bundles", [])]
+            for b in idx.get("bundles", []):
+                index_hashes.append(b["hash"])
+                src = b.get("source")
+                if src and looks_absolute(src):
+                    problems.append(
+                        f"{pid}@{b.get('hash')}: index source is an absolute path "
+                        f"({src!r}) — store it repo-relative"
+                    )
         else:
             problems.append(f"{pid}: missing index.json")
 
@@ -72,18 +90,28 @@ def main() -> int:
         for h in index_hashes:
             if h not in disk_hashes:
                 problems.append(f"{pid}: index lists {h} but bundle dir absent")
+        for h in disk_hashes:
+            if h not in index_hashes:
+                problems.append(f"{pid}@{h}: bundle dir is not listed in index.json")
 
     # bindings reference existing bundles
     if BINDINGS_FILE.is_file():
         data = json.loads(BINDINGS_FILE.read_text(encoding="utf-8-sig"))
         for e in data.get("bindings", []):
+            if "target" in e:
+                problems.append(
+                    f"binding {e.get('slot')}: machine-local target "
+                    f"{e.get('target')!r} is committed in bindings.json — move it to "
+                    f"targets.local.json (gitignored) and re-bind"
+                )
             pid, h = e.get("persona"), e.get("hash")
             if not (BUNDLES_DIR / str(pid) / str(h)).is_dir():
                 problems.append(f"binding {e.get('slot')}: references missing bundle {pid}@{h}")
 
     if problems:
         fail(problems)
-    print(f"verify: OK — {checked} bundle(s) hash-verified, index/bindings consistent")
+    print(f"verify: OK — {checked} bundle(s) hash-verified, "
+          f"index/bindings consistent and portable")
     return 0
 
 

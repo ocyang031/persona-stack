@@ -3,3 +3,5 @@ _archive/
 __pycache__/
 receipts/
 _scratch/
+# machine-local host paths; the authoritative bindings table stays portable
+targets.local.json

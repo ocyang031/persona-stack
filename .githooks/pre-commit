@@ -1,14 +1,15 @@
 #!/bin/sh
-# persona-stack pre-commit gate: bundles immutability is enforced here.
-# Recomputes every bundle's content hash; a modified published bundle
-# fails the commit with instructions.
+# persona-stack pre-commit gate: bundle immutability + portable authority tables.
+# verify.py recomputes every bundle hash and rejects machine-local paths in
+# bindings.json / bundle index.json.
 python verify.py || {
     cat >&2 <<'EOF'
-commit blocked: bundles integrity check failed.
+commit blocked: registry integrity check failed.
 
-A published bundle's content no longer matches its hash (directory name).
-Editing happens in sources/<id>/ — then `python persona.py publish`.
-To restore a tampered bundle: git checkout -- bundles/
+A published bundle's content no longer matches its hash (directory name), or the
+authoritative tables carry a machine-local path. Editing happens in sources/<id>/
+— then `python persona.py publish`. To restore a tampered bundle: git checkout -- bundles/
+Machine paths belong in targets.local.json (gitignored), not bindings.json.
 EOF
     exit 1
 }

@@ -88,6 +88,12 @@ I3 顺手消灭一类经典漂移："改已部署产物"在不可变模型里没
 ```
 
 - **persona.yaml 清单**：id、version、按顺序列出的模块。绑定的 `include` 优先于适配器默认选择。
+- **绑定表与落点表分离**：`bindings.json` 是权威应然（slot → persona@hash + pin/include），
+  随仓库分发；host 的绝对路径是**机器本地事实**，存各 clone 的 `targets.local.json`
+  （gitignore，永不提交）。reconcile 用本机落点表解析 target：缺落点报 `unconfigured`。
+  这样 clone 即全量副本，权威历史里不会混进某台机器的目录结构。
+- **版本号机器闸门**：一个 version 只对应一个内容 hash。sources 内容变了而 version 未变，
+  `pack`（以及走 pack 的 `publish`）直接拒绝；版本号是人读的发布标识，不是注释。
 - **Reconciler**：唯一深模块。接口两个动词，后面藏取件、渲染、编码、事务落位、对账、回滚全部行为。无状态：应然在绑定表，实然在回执流。
 - **Host Adapter**：用宿主的原生格式落位、读回和卸载选中的模块。
 
@@ -132,6 +138,10 @@ I3 顺手消灭一类经典漂移："改已部署产物"在不可变模型里没
 | pin | 该 slot 冻结当前 hash，豁免对账 | 声明式例外 |
 | promote | 宿主编辑抽回源仓库，作为新版本提案走 validate → pack → 绑定升级 | agent 自改进循环的安全化：改进变成一次版本化晋升，而不是暗事实源 |
 
+命令 `revert` 与上表的 revert 策略同名不同义：命令是**回滚版本**（绑定指回上一 hash），
+属显式版本决定，因此穿过 pin 收敛；pin 继续冻结新 hash、拦截后续漂移，但不会把人的
+显式回滚变成空操作。
+
 ## 8. 质量属性落地
 
 - **可伸缩**：绑定表是数据，N persona × M 宿主 × K slot 零代码增长；reconciler 无状态、任意副本可跑；内容寻址天然去重；pull 接入 = 首次拉取 + 一行绑定。
@@ -144,6 +154,9 @@ I3 顺手消灭一类经典漂移："改已部署产物"在不可变模型里没
 2. 占位符词表变更 = schema 版本 bump；
 3. 模块改动验证独立使用和常用组合，维护说明同步反映实际行为；
 4. 绑定表变更走 PR，改动可追溯回源 hash。
+5. 版本号随内容走：内容 hash 变则 version 必变；机器闸门在 `pack`（及 `publish`）。
+6. 权威表可移植：`bindings.json` 不写 host 绝对路径，`index.json` 不写绝对 source；
+   `verify.py` 在 pre-commit 与 CI 双重拦截回潮。
 
 ## 10. 命令面（9 动词）
 

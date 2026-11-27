@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .adapters import get_adapter
 from .manifest import load_source, validate_source
-from .paths import BUNDLES_DIR, HASH_LEN, REPO, SOURCES_DIR
+from .paths import BUNDLES_DIR, HASH_LEN, REPO, SOURCES_DIR, TARGETS_FILE
 from .registry import (
     canonical_hash,
     derived_hash,
@@ -18,8 +18,36 @@ from .registry import (
     resolve_ref,
     save_index,
 )
-from .state import find_binding, load_bindings, receipt, save_bindings
+from .state import (
+    find_binding,
+    load_bindings,
+    load_targets,
+    receipt,
+    save_bindings,
+    save_targets,
+)
 from .util import die, now_iso
+
+
+def _target(e: dict) -> "Path | None":
+    """Resolve a slot's host path from this clone's machine-local map."""
+    raw = load_targets().get(e["slot"])
+    return Path(raw) if raw else None
+
+
+def _assert_new_version(pid: str, version: str, h: str, src: Path) -> None:
+    """Machine gate: one version number = one content hash.
+
+    Publishing changed content under an already-published version would make
+    the registry's version chain lie. Refuse before the bundle is written.
+    """
+    for b in load_index(pid)["bundles"]:
+        if b["version"] == version and b["hash"] != h:
+            die(
+                f"pack: {pid} v{version} is already published as {pid}@{b['hash']}, "
+                f"but {src.name} hashes to {h} — content changed without a version "
+                f"bump. Bump version in {src / 'persona.yaml'} before publish."
+            )
 
 
 def cmd_validate(args) -> int:
@@ -47,8 +75,15 @@ def cmd_pack(args) -> int:
             print(f"error: {e}")
         die("pack: source failed validation; fix the source files first")
     pid = m["id"]
+    version = str(m["version"])
     h = canonical_hash(manifest_bytes, plain)
+    _assert_new_version(pid, version, h, src)
     bdir = BUNDLES_DIR / pid / h
+    try:
+        stored_source = src.relative_to(REPO).as_posix()
+    except ValueError:
+        # outside the repo: keep the registry portable, just say so
+        stored_source = "external"
     if bdir.exists():
         same = (bdir / "persona.yaml").read_bytes() == manifest_bytes and all(
             (bdir / name).read_bytes() == content for name, content in plain
@@ -64,10 +99,10 @@ def cmd_pack(args) -> int:
     idx = load_index(pid)
     if not any(e["hash"] == h for e in idx["bundles"]):
         idx["bundles"].append(
-            {"version": m["version"], "hash": h, "packed_at": now_iso(), "source": str(src)}
+            {"version": version, "hash": h, "packed_at": now_iso(), "source": stored_source}
         )
     save_index(pid, idx)
-    print(f"pack: {pid}@{h} (v{m['version']}, {len(plain)} files) → {bdir}")
+    print(f"pack: {pid}@{h} (v{version}, {len(plain)} files) → {bdir}")
     return 0
 
 
@@ -123,7 +158,7 @@ def cmd_bind(args) -> int:
         k, _, v = kv.partition("=")
         variables[k] = v
     adapter = get_adapter(args.host)
-    target = Path(args.target).resolve()
+    target = Path(args.target).expanduser().resolve()
     if target.exists():
         if adapter.target_kind == "file" and target.is_dir():
             die(f"host {args.host!r} places one file; target is a directory: {target}")
@@ -144,18 +179,23 @@ def cmd_bind(args) -> int:
         persona=pid,
         hash=h,
         host=args.host,
-        target=str(target),
         vars=variables,
         pin=bool(args.pin),
         device=getattr(args, "device", None) or "",
         bound_at=now_iso(),
     )
+    # A host path is a fact about this machine, not about the registry:
+    # it lives in targets.local.json (gitignored), never in committed bindings.
+    entry.pop("target", None)
     if include:
         entry["include"] = include
     else:
         entry.pop("include", None)
     save_bindings(data)
-    print(f"bind: {args.slot} → {pid}@{h} (host={args.host}, target={entry['target']}"
+    targets = load_targets()
+    targets[args.slot] = str(target)
+    save_targets(targets)
+    print(f"bind: {args.slot} → {pid}@{h} (host={args.host}, target={target}"
           + (f", device={entry['device']}" if entry["device"] else "")
           + (", pin" if entry["pin"] else "") + ")")
     return 0
@@ -166,8 +206,12 @@ def cmd_unbind(args) -> int:
     e = find_binding(data, args.slot)
     if e is None:
         die(f"no binding for slot {args.slot!r}")
+    target = _target(e)
+    if target is None:
+        die(f"no machine-local target for slot {args.slot!r} in {TARGETS_FILE.name} — "
+            f"unbind on the device that bound it")
     if not args.yes:
-        die(f"unbind strips the persona block from {e['target']} and drops the binding "
+        die(f"unbind strips the persona block from {target} and drops the binding "
             f"— re-run with --yes")
     pid, h = e["persona"], e["hash"]
     files: dict = {}
@@ -178,13 +222,16 @@ def cmd_unbind(args) -> int:
         print(f"warn: bundle {pid}@{h} not in local registry — "
               f"removing the block without a file list")
     adapter = get_adapter(e["host"])
-    for note in adapter.remove(Path(e["target"]), pid, files, loads):
+    for note in adapter.remove(target, pid, files, loads):
         print(f"  note: {note}")
     data["bindings"].remove(e)
     save_bindings(data)
-    print(f"unbind: {args.slot} → {e['target']}")
+    targets = load_targets()
+    targets.pop(args.slot, None)
+    save_targets(targets)
+    print(f"unbind: {args.slot} → {target}")
     print(f"  restore: python persona.py bind {args.slot} --host {e['host']} "
-          f"--target \"{e['target']}\" {pid}@{h}")
+          f"--target \"{target}\" {pid}@{h}")
     return 0
 
 
@@ -217,6 +264,10 @@ def _selected(e: dict, adapter, files: dict) -> dict:
 def _check(e: dict):
     """One binding → (state, detail). Loads bundle, renders, readbacks, compares."""
     pid, h = e["persona"], e["hash"]
+    target = _target(e)
+    if target is None:
+        return ("unconfigured",
+                f"no machine-local target in {TARGETS_FILE.name} — bind this slot here")
     bdir = BUNDLES_DIR / pid / h
     if not bdir.is_dir():
         return "missing-bundle", f"{pid}@{h} not in local registry — pack or pull"
@@ -228,7 +279,7 @@ def _check(e: dict):
     except KeyError as exc:
         return "render-fail", f"{exc}"
     dh = derived_hash(manifest_bytes, rendered)
-    got = adapter.readback(Path(e["target"]), pid, list(files), loads)
+    got = adapter.readback(target, pid, list(files), loads)
     if got is None or not got:
         return "not-placed", "host target empty or absent — run reconcile"
     names = [n for n in files if n not in got]
@@ -268,7 +319,11 @@ def cmd_reconcile(args) -> int:
               + (f" device {args.device!r}" if args.device else "")
               + " — nothing to converge")
         return 0
-    if args.pull:
+    return _converge(entries, pull=args.pull, respect_pin=True)
+
+
+def _converge(entries: list, pull: bool, respect_pin: bool) -> int:
+    if pull:
         r = subprocess.run(["git", "-C", str(REPO), "pull", "--ff-only"], capture_output=True, text=True)
         if r.returncode != 0:
             print(f"warn: git pull failed, continuing with local registry\n{r.stderr.strip()}")
@@ -276,8 +331,16 @@ def cmd_reconcile(args) -> int:
             print(f"pull: {r.stdout.strip().splitlines()[-1] if r.stdout.strip() else 'up to date'}")
     failed = 0
     for e in entries:
-        if e.get("pin"):
+        if respect_pin and e.get("pin"):
             print(f"  {e['slot']}: pinned — skipping (drift is declared, not converged away)")
+            continue
+        target = _target(e)
+        if target is None:
+            receipt(e["slot"], persona=e["persona"], hash=e["hash"], ok=False,
+                    detail="no local target")
+            print(f"  {e['slot']}: FAIL — no machine-local target in {TARGETS_FILE.name} "
+                  f"(bind this slot on this device)")
+            failed += 1
             continue
         pid, h = e["persona"], e["hash"]
         bdir = BUNDLES_DIR / pid / h
@@ -298,7 +361,7 @@ def cmd_reconcile(args) -> int:
             continue
         dh = derived_hash(manifest_bytes, rendered)
         try:
-            adapter.place(Path(e["target"]), pid, dh, rendered, loads)
+            adapter.place(target, pid, dh, rendered, loads)
         except Exception as exc:  # noqa: BLE001
             receipt(e["slot"], persona=pid, hash=h, derived=dh, ok=False, detail=f"place: {exc}")
             print(f"  {e['slot']}: FAIL — place error: {exc}")
@@ -325,12 +388,18 @@ def cmd_revert(args) -> int:
     i = hs.index(e["hash"])
     if i == 0:
         die(f"{e['persona']}@{e['hash']} is the oldest packed version — nothing to revert to")
+    if _target(e) is None:
+        die(f"no machine-local target for slot {args.slot!r} in {TARGETS_FILE.name} — "
+            f"bind it here before reverting")
     prev = hs[i - 1]
     e["hash"] = prev
     e["bound_at"] = now_iso()
     save_bindings(data)
     print(f"revert: {args.slot} → {e['persona']}@{prev}")
-    return cmd_reconcile(argparse.Namespace(slot=args.slot, pull=False))
+    if e.get("pin"):
+        print("revert: slot is pinned — an explicit revert converges the host anyway "
+              "(the pin keeps guarding later drift)")
+    return _converge([e], pull=False, respect_pin=False)
 
 
 def cmd_absorb(args) -> int:
@@ -343,7 +412,10 @@ def cmd_absorb(args) -> int:
     pid, h = e["persona"], e["hash"]
     idx = load_index(pid)
     entry = next((b for b in idx["bundles"] if b["hash"] == h), None)
-    src = Path(entry["source"]) if entry and entry.get("source") else None
+    src = None
+    if entry and entry.get("source"):
+        raw = Path(entry["source"])
+        src = raw if raw.is_absolute() else REPO / raw
     if src is None or not (src / "persona.yaml").is_file():
         # pack-time source moved/deleted (repo migration) — fall back to the
         # in-repo editing face; copy old bundle there if it is empty/missing.
@@ -352,6 +424,10 @@ def cmd_absorb(args) -> int:
             print(f"note: pack-time source unreachable, using {src}")
         else:
             die(f"source directory unreachable — copy bundle {pid}@{h} into sources/{pid}/ first, then absorb")
+    target = _target(e)
+    if target is None:
+        die(f"no machine-local target for slot {args.slot!r} in {TARGETS_FILE.name} — "
+            f"bind it here before absorbing")
     _, files, loads = load_bundle(pid, h)
     adapter = get_adapter(e["host"])
     try:
@@ -365,7 +441,7 @@ def cmd_absorb(args) -> int:
     missing = files.keys() - {name for name, _ in source_files}
     if missing:
         die(f"cannot absorb modules absent from source: {sorted(missing)}")
-    got = adapter.readback(Path(e["target"]), pid, list(files), loads)
+    got = adapter.readback(target, pid, list(files), loads)
     if not got:
         die("nothing readable on host side")
     changed = []

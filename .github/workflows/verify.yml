@@ -1,0 +1,39 @@
+name: registry-verify
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Lint the editing face
+        run: |
+          for dir in sources/*/; do
+            [ -f "$dir/persona.yaml" ] || continue
+            python persona.py validate "$dir"
+          done
+
+      - name: Registry integrity gate
+        run: python verify.py
+
+      - name: Adapter round-trips
+        run: python -m unittest discover -s tests -v
+
+      - name: Byte-compile
+        run: |
+          python -m py_compile persona.py verify.py \
+            persona_stack/*.py persona_stack/adapters/*.py

@@ -30,7 +30,7 @@ def main() -> int:
     p.add_argument("source")
     p.set_defaults(fn=cmd_pack)
 
-    p = sub.add_parser("publish", help="commit the registry (bundles + bindings) to git")
+    p = sub.add_parser("publish", help="commit the registry (version bump gate before git)")
     p.add_argument("--msg", help="override the commit message")
     p.set_defaults(fn=cmd_publish)
 
@@ -38,10 +38,10 @@ def main() -> int:
     p.add_argument("slot")
     p.add_argument("ref", help="persona or persona@hash")
     p.add_argument("--host", required=True, choices=sorted(ADAPTERS))
-    p.add_argument("--target", required=True, help="host-side directory (or file, for single-file hosts)")
+    p.add_argument("--target", required=True, help="host-side directory (or file); stored machine-locally")
     p.add_argument("--var", action="append", metavar="KEY=VAL", help="render variable (repeatable)")
     p.add_argument("--include", default="", help="comma-separated file whitelist (default: the adapter's)")
-    p.add_argument("--pin", action="store_true", help="exempt this slot from reconcile")
+    p.add_argument("--pin", action="store_true", help="exempt this slot from reconcile (revert still converges)")
     p.add_argument("--device", default="", help="wiring identity tag (per-device, e.g. linux-sandbox / win-dsh)")
     p.set_defaults(fn=cmd_bind)
 

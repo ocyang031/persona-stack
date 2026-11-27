@@ -4,8 +4,14 @@ from __future__ import annotations
 import json
 import re
 
-from .paths import BINDINGS_FILE, RECEIPTS_DIR
+from .paths import BINDINGS_FILE, RECEIPTS_DIR, TARGETS_FILE
 from .util import now_iso
+
+
+def _dump(path, data) -> None:
+    """Byte-level, LF-only JSON — Path.write_text would translate newlines."""
+    payload = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    path.write_bytes(payload.encode("utf-8"))
 
 
 def load_bindings() -> dict:
@@ -16,7 +22,19 @@ def load_bindings() -> dict:
 
 
 def save_bindings(data: dict) -> None:
-    BINDINGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _dump(BINDINGS_FILE, data)
+
+
+def load_targets() -> "dict[str, str]":
+    """This clone's slot -> absolute host target map (gitignored)."""
+    if TARGETS_FILE.is_file():
+        raw = json.loads(TARGETS_FILE.read_text(encoding="utf-8-sig"))
+        return {str(k): str(v) for k, v in raw.items()}
+    return {}
+
+
+def save_targets(targets: "dict[str, str]") -> None:
+    _dump(TARGETS_FILE, dict(sorted(targets.items())))
 
 
 def find_binding(data: dict, slot: str) -> "dict | None":

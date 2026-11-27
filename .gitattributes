@@ -1,3 +1,5 @@
 # Hashes and adapter round trips require identical bytes on every platform.
 /sources/** text eol=lf
 /bundles/** text eol=lf
+/bindings.json text eol=lf
+/.githooks/** text eol=lf

@@ -2,8 +2,9 @@
 """dsh-bridge · persona.prefix.txt → dsh patch overlay（M2 宿主接线，多设备版）。
 
 从 bindings.json 读取所有 host=dsh 的绑定（按 slot/device 标识区分设备），
-对每条绑定：物化产物（reconcile 已完成）中的 persona.prefix.txt 编译进
-dsh patch overlay，供 start.sh 的 --patch 挂载。编译逻辑与旧架构（99fa1f9）一致。
+再用本机 targets.local.json 解析每个 slot 的落点；对每条绑定：物化产物
+（reconcile 已完成）中的 persona.prefix.txt 编译进 dsh patch overlay，供
+start.sh 的 --patch 挂载。编译逻辑与旧架构（99fa1f9）一致。
 
   用法：
     dsh-bridge.py [slot ...]        # 无参数 = 处理全部 host=dsh 的绑定
@@ -21,6 +22,7 @@ import sys
 
 REPO = "/root/001_OcLedger/100_Works/persona-stack"
 BINDINGS = os.path.join(REPO, "bindings.json")
+TARGETS = os.path.join(REPO, "targets.local.json")
 NODE24 = "/root/.nvm/versions/node/v24.21.0/bin/node"
 DSH_ENTRY = "/workspace/dsh-app/node_modules/@deepseek-ai/dsh/lib/bin.js"
 PROFILE = "web"
@@ -57,8 +59,8 @@ def replace_prefix(block, new_prefix):
     return new_block, cont
 
 
-def compile_binding(e, dump_text):
-    slot, target = e["slot"], e["target"]
+def compile_binding(e, target, dump_text):
+    slot = e["slot"]
     pid, h = e["persona"], e["hash"]
     device = e.get("device") or "(no device tag)"
     prefix_txt = os.path.join(target, "persona.prefix.txt")
@@ -107,14 +109,22 @@ def main():
     if not os.path.isfile(BINDINGS):
         sys.exit(f"[bridge] ERROR: {BINDINGS} missing")
     data = json.load(open(BINDINGS, encoding="utf-8-sig"))  # utf-8-sig: tolerate BOM
+    targets = json.load(open(TARGETS, encoding="utf-8-sig")) if os.path.isfile(TARGETS) else {}
     entries = [b for b in data.get("bindings", []) if b.get("host") == "dsh"]
     if slots:
         entries = [b for b in entries if b["slot"] in slots]
     if not entries:
         print("[bridge] no host=dsh bindings match" + (f" {sorted(slots)}" if slots else "") + " — nothing to do")
         return
+    unresolved = [b["slot"] for b in entries if b["slot"] not in targets]
+    for slot in unresolved:
+        print(f"[bridge] SKIP {slot}: no local target in {TARGETS} (bound to another device?)")
+    entries = [b for b in entries if b["slot"] in targets]
+    if not entries:
+        print("[bridge] nothing to compile on this device")
+        return
     dump_text = dump_config()
-    ok = sum(compile_binding(e, dump_text) for e in entries)
+    ok = sum(compile_binding(e, targets[e["slot"]], dump_text) for e in entries)
     print(f"[bridge] done: {ok}/{len(entries)} binding(s) compiled")
 
 
